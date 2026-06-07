@@ -134,6 +134,7 @@
         .msg-info {
             font-size: 9px; opacity: 0.8; margin-top: 2px;
             display: flex; gap: 6px; align-items: center;
+            flex-wrap: wrap;
         }
         .reply-indicator {
             font-size: 10px;
@@ -222,554 +223,524 @@
 </div>
 
 <script>
-(function(){
-    // ========== تنظیمات اولیه ==========
-    const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-    
-    // DOM elements
-    const loginOverlay = document.getElementById('login-overlay');
-    const nameInput = document.getElementById('name-input');
-    const btnLogin = document.getElementById('btn-login');
-    const mainApp = document.getElementById('main-app');
-    const player = document.getElementById('player');
-    const btnPlay = document.getElementById('btn-play');
-    const btnPause = document.getElementById('btn-pause');
-    const speedSelect = document.getElementById('speed-select');
-    const statusTag = document.getElementById('status-tag');
-    const usersBar = document.getElementById('users-bar');
-    const messagesDiv = document.getElementById('messages');
-    const msgInput = document.getElementById('msg-input');
-    const sendBtn = document.getElementById('send-btn');
-    const seekBar = document.getElementById('seek-bar');
-    const currentTimeSpan = document.getElementById('current-time');
-    const durationSpan = document.getElementById('duration');
-    const fullscreenBtn = document.getElementById('fullscreen-btn');
-    const fileUploader = document.getElementById('file-uploader');
+// ====================== راه‌اندازی اولیه ======================
+const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
 
-    let myName = '';
-    let myPeerId = null;
-    let mqttClient = null;
-    let videoSyncEngine = null;
-    let isSeeking = false;
-    let rafId = null;
+// DOM elements
+const loginOverlay = document.getElementById('login-overlay');
+const nameInput = document.getElementById('name-input');
+const btnLogin = document.getElementById('btn-login');
+const mainApp = document.getElementById('main-app');
+const player = document.getElementById('player');
+const btnPlay = document.getElementById('btn-play');
+const btnPause = document.getElementById('btn-pause');
+const speedSelect = document.getElementById('speed-select');
+const statusTag = document.getElementById('status-tag');
+const usersBar = document.getElementById('users-bar');
+const messagesDiv = document.getElementById('messages');
+const msgInput = document.getElementById('msg-input');
+const sendBtn = document.getElementById('send-btn');
+const seekBar = document.getElementById('seek-bar');
+const currentTimeSpan = document.getElementById('current-time');
+const durationSpan = document.getElementById('duration');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+const fileUploader = document.getElementById('file-uploader');
 
-    // ========== شبکه همتا به همتا با شماره ترتیبی و تضمین تحویل ==========
-    class ReliableChatNetwork {
-        constructor() {
-            this.peer = null;
-            this.connections = new Map(); // peerId -> { conn, outSeq, expectedSeq, pendingBuffer (Map), name }
-            this.callbacks = { onData: null, onStatus: null, onPeerConnected: null, onPeerDisconnected: null };
-            this.heartbeatInterval = 5000;
-        }
+let myName = '';
+let myPeerId = null;
+let mqttClient = null;
+let connectedPeers = new Map(); // peerId -> { name, conn, outSeq, expectedSeq, pendingMessages }
+let videoSync = null;
+let isSeeking = false;
+let rafId = null;
 
-        init() {
-            const iceServers = [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-            ];
-            this.peer = new Peer(null, { debug: 0, config: { iceServers } });
-            this.peer.on('open', (id) => { myPeerId = id; this._emitStatus('ready', id); });
-            this.peer.on('connection', (conn) => this._handleConnection(conn));
-            this.peer.on('disconnected', () => { this._emitStatus('disconnected'); this.peer.reconnect(); });
-            this.peer.on('error', (err) => { console.error('Peer error:', err); this._emitStatus('error', err.message); });
-        }
+// متغیر برای ریپلای موقت
+let pendingReply = null;
 
-        _handleConnection(conn) {
-            conn.on('open', () => {
-                const peerId = conn.peer;
-                this.connections.set(peerId, {
-                    conn: conn,
-                    outSeq: 1,
-                    expectedSeq: 1,
-                    pendingBuffer: new Map(), // seq -> message
-                    name: 'در حال دریافت...'
-                });
-                this._startHeartbeat(conn);
-                if (this.callbacks.onPeerConnected) this.callbacks.onPeerConnected(peerId, conn);
-            });
-            conn.on('data', (data) => this._processIncoming(conn.peer, data));
-            conn.on('close', () => {
-                this.connections.delete(conn.peer);
-                if (this.callbacks.onPeerDisconnected) this.callbacks.onPeerDisconnected(conn.peer);
-            });
-            conn.on('error', (err) => { console.warn('Connection error:', err); this.connections.delete(conn.peer); });
-        }
+// ====================== توابع کمکی ======================
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
 
-        sendMessage(peerId, text, replyToSeq = null) {
-            const peerData = this.connections.get(peerId);
-            if (!peerData) return false;
-            const seq = peerData.outSeq++;
-            const message = {
-                type: 'CHAT',
-                seq: seq,
-                text: text,
-                sender: myName,
-                senderId: myPeerId,
-                replyToSeq: replyToSeq,
-                timestamp: Date.now()
-            };
-            this._sendReliable(peerId, message);
-            // نمایش پیام خودمان بلافاصله
-            this._displayChatMessage(myPeerId, seq, text, myName, true, replyToSeq, null);
-            return true;
-        }
+function sanitizeName(name) {
+    let cleaned = name.trim().slice(0, 20);
+    cleaned = cleaned.replace(/[<>]/g, '');
+    return cleaned || 'ناشناس';
+}
 
-        _sendReliable(peerId, message) {
-            const peerData = this.connections.get(peerId);
-            if (!peerData) return;
-            const conn = peerData.conn;
-            if (conn && conn.open) {
-                conn.send(message);
+function formatTime(seconds) {
+    if (isNaN(seconds)) return "00:00";
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    if (hrs > 0) return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+    return `${mins}:${secs.toString().padStart(2,'0')}`;
+}
+
+function stringToColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 65%)`;
+}
+
+function updateUsersBar() {
+    let html = `<span class="user-chip">👤 ${escapeHtml(myName)}</span>`;
+    for (let [id, info] of connectedPeers.entries()) {
+        html += `<span class="user-chip">👤 ${escapeHtml(info.name)}</span>`;
+    }
+    usersBar.innerHTML = html;
+}
+
+// نمایش پیام در UI با رعایت ترتیب و شماره
+function displayMessage(peerId, seq, text, senderName, isSelf, replyToSeq = null, replyText = null) {
+    const msgKey = `${peerId}:${seq}`;
+    if (document.querySelector(`.chat-message[data-msg-key="${msgKey}"]`)) return;
+
+    const div = document.createElement('div');
+    div.className = `chat-message ${isSelf ? 'msg-self' : 'msg-other'}`;
+    if (!isSelf && peerId) {
+        div.style.backgroundColor = stringToColor(peerId);
+    } else if (!isSelf) {
+        div.style.backgroundColor = '#555';
+    }
+    div.setAttribute('data-msg-key', msgKey);
+
+    let content = '';
+    if (replyToSeq && replyText) {
+        content += `<div class="reply-indicator">↪️ پاسخ به #${replyToSeq}: ${escapeHtml(replyText.substring(0, 50))}</div>`;
+    }
+    content += `<div>${escapeHtml(text)}</div>`;
+    content += `<div class="msg-info">
+                    <span>#${seq}</span>
+                    <span>${escapeHtml(senderName)} • ${new Date().toLocaleTimeString('fa-IR')}</span>
+                    <span class="reply-badge" data-peer="${peerId}" data-seq="${seq}" data-text="${escapeHtml(text)}">↩️ پاسخ</span>
+                </div>`;
+    div.innerHTML = content;
+
+    // رویداد کلیک برای ریپلای
+    const replyBtn = div.querySelector('.reply-badge');
+    replyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetPeer = replyBtn.dataset.peer;
+        const targetSeq = parseInt(replyBtn.dataset.seq);
+        const targetText = replyBtn.dataset.text;
+        pendingReply = { peerId: targetPeer, seq: targetSeq, text: targetText };
+        msgInput.placeholder = `پاسخ به #${targetSeq}: ${targetText.substring(0, 30)}...`;
+        msgInput.focus();
+    });
+
+    // درج بر اساس ترتیب seq (صعودی)
+    let inserted = false;
+    const children = messagesDiv.children;
+    for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        const key = child.getAttribute('data-msg-key');
+        if (key) {
+            const existingSeq = parseInt(key.split(':')[1]);
+            if (existingSeq > seq) {
+                messagesDiv.insertBefore(div, child);
+                inserted = true;
+                break;
             }
         }
+    }
+    if (!inserted) messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
-        requestMissing(peerId, fromSeq, toSeq) {
-            const peerData = this.connections.get(peerId);
-            if (!peerData) return;
-            const conn = peerData.conn;
-            if (conn && conn.open) {
-                conn.send({ type: 'REQ', fromSeq, toSeq });
-            }
-        }
-
-        _processIncoming(senderId, data) {
-            if (data.type === 'CHAT') {
-                this._handleChat(senderId, data);
-            } else if (data.type === 'REQ') {
-                this._handleReq(senderId, data);
-            } else if (data.type === 'HELLO') {
-                const peerData = this.connections.get(senderId);
-                if (peerData) peerData.name = data.name || 'ناشناس';
-                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            } else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY' || data.type === 'HISTORY') {
-                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            }
-        }
-
-        _handleChat(senderId, msg) {
-            const peerData = this.connections.get(senderId);
-            if (!peerData) return;
-            const expected = peerData.expectedSeq;
-            const receivedSeq = msg.seq;
-            if (receivedSeq === expected) {
-                this._deliverMessage(senderId, msg);
-                peerData.expectedSeq++;
-                // بررسی بافر
-                let nextSeq = peerData.expectedSeq;
-                while (peerData.pendingBuffer.has(nextSeq)) {
-                    const buffered = peerData.pendingBuffer.get(nextSeq);
-                    this._deliverMessage(senderId, buffered);
-                    peerData.pendingBuffer.delete(nextSeq);
-                    nextSeq++;
-                    peerData.expectedSeq++;
-                }
-            } else if (receivedSeq > expected) {
-                // پیام جلوتر – بافر و درخواست مجدد
-                peerData.pendingBuffer.set(receivedSeq, msg);
-                this.requestMissing(senderId, expected, receivedSeq - 1);
-            } else {
-                // پیام تکراری یا قدیمی – نادیده گرفته شود
-                console.log('Duplicate/old message', receivedSeq, expected);
-            }
-        }
-
-        _deliverMessage(senderId, msg) {
-            const isSelf = (msg.senderId === myPeerId);
-            let replyText = null;
-            if (msg.replyToSeq) {
-                // تلاش برای یافتن متن پیام اصلی از DOM (با استفاده از کلید)
-                const originalKey = `${msg.senderId}:${msg.replyToSeq}`;
-                const originalDiv = document.querySelector(`.chat-message[data-msg-key="${originalKey}"]`);
-                if (originalDiv) {
-                    const replyDiv = originalDiv.querySelector('div:not(.msg-info):not(.reply-indicator)');
-                    if (replyDiv) replyText = replyDiv.innerText;
-                }
-                if (!replyText) replyText = `پیام #${msg.replyToSeq}`;
-            }
-            this._displayChatMessage(msg.senderId, msg.seq, msg.text, msg.sender, isSelf, msg.replyToSeq, replyText);
-        }
-
-        _displayChatMessage(peerId, seq, text, senderName, isSelf, replyToSeq, replyText) {
-            const msgKey = `${peerId}:${seq}`;
-            if (document.querySelector(`.chat-message[data-msg-key="${msgKey}"]`)) return;
-
-            const div = document.createElement('div');
-            div.className = `chat-message ${isSelf ? 'msg-self' : 'msg-other'}`;
-            if (!isSelf && peerId) {
-                div.style.backgroundColor = this._stringToColor(peerId);
-            } else if (!isSelf) {
-                div.style.backgroundColor = '#555';
-            }
-            div.setAttribute('data-msg-key', msgKey);
-
-            let content = '';
-            if (replyToSeq && replyText) {
-                content += `<div class="reply-indicator">↪️ پاسخ به #${replyToSeq}: ${escapeHtml(replyText.substring(0, 50))}</div>`;
-            }
-            content += `<div>${escapeHtml(text)}</div>`;
-            content += `<div class="msg-info">
-                            <span>#${seq}</span>
-                            <span>${escapeHtml(senderName)} • ${new Date().toLocaleTimeString('fa-IR')}</span>
-                            <span class="reply-badge" data-peer="${peerId}" data-seq="${seq}" data-text="${escapeHtml(text)}">↩️ پاسخ</span>
-                         </div>`;
-            div.innerHTML = content;
-
-            // رویداد ریپلای
-            const replyBtn = div.querySelector('.reply-badge');
-            replyBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const targetPeer = replyBtn.dataset.peer;
-                const targetSeq = replyBtn.dataset.seq;
-                const targetText = replyBtn.dataset.text;
-                // ذخیره در متغیر سراسری
-                window._pendingReply = { peerId: targetPeer, seq: parseInt(targetSeq), text: targetText };
-                msgInput.placeholder = `پاسخ به #${targetSeq}: ${targetText.substring(0, 30)}...`;
-                msgInput.focus();
-            });
-
-            // درج بر اساس ترتیب seq
-            let inserted = false;
-            const children = messagesDiv.children;
-            for (let i = 0; i < children.length; i++) {
-                const child = children[i];
-                const key = child.getAttribute('data-msg-key');
-                if (key) {
-                    const existingSeq = parseInt(key.split(':')[1]);
-                    if (existingSeq > seq) {
-                        messagesDiv.insertBefore(div, child);
-                        inserted = true;
-                        break;
-                    }
-                }
-            }
-            if (!inserted) messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        _stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = ((hash << 5) - hash) + str.charCodeAt(i);
-                hash |= 0;
-            }
-            const hue = Math.abs(hash % 360);
-            return `hsl(${hue}, 70%, 65%)`;
-        }
-
-        _handleReq(senderId, req) {
-            // در این نسخه ساده، درخواست مجدد را نادیده می‌گیریم (چون پیام‌ها به صورت به نسبت قابل اعتماد ارسال می‌شوند)
-            // برای پیاده‌سازی کامل باید تاریخچه خروجی نگهداری شود.
-            console.log('Request missing from', senderId, req.fromSeq, req.toSeq);
-        }
-
-        _startHeartbeat(conn) {
-            if (conn.heartbeatTimer) return;
-            conn.heartbeatTimer = setInterval(() => { if (conn.open) conn.send({ type: 'PING' }); }, this.heartbeatInterval);
-        }
-
-        connect(remoteId) {
-            if (remoteId === myPeerId || this.connections.has(remoteId)) return;
-            const conn = this.peer.connect(remoteId, { reliable: true });
-            this._handleConnection(conn);
-        }
-
-        onData(cb) { this.callbacks.onData = cb; }
-        onStatus(cb) { this.callbacks.onStatus = cb; }
-        onPeerConnected(cb) { this.callbacks.onPeerConnected = cb; }
-        onPeerDisconnected(cb) { this.callbacks.onPeerDisconnected = cb; }
-        _emitStatus(type, detail) { if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() }); }
-        destroy() { if (this.peer) this.peer.destroy(); }
+// ====================== شبکه همتا به همتا (با قابلیت اطمینان و شماره) ======================
+class PeerNetwork {
+    constructor() {
+        this.peer = null;
+        this.callbacks = { onData: null, onStatus: null };
     }
 
-    // ========== موتور همگام‌سازی ویدئو (بهینه موبایل) ==========
-    class VideoSyncEngine {
-        constructor(player, network, getPeersFunc) {
-            this.player = player;
-            this.network = network;
-            this.getConnectedPeers = getPeersFunc;
-            this.syncLock = false;
-            this.bufferingPeers = new Set();
-            this.clockOffset = new Map();
-            this.latencySamples = new Map();
-            this.maxLatencySamples = 8;
-            this.lastSyncTime = 0;
-            this.SYNC_THROTTLE = 200;
-            this._bindPlayerEvents();
+    init() {
+        const iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+        ];
+        this.peer = new Peer(null, { debug: 0, config: { iceServers } });
+        this.peer.on('open', (id) => { myPeerId = id; this._emitStatus('ready', id); });
+        this.peer.on('connection', (conn) => this._handleConnection(conn));
+        this.peer.on('disconnected', () => { this._emitStatus('disconnected'); this.peer.reconnect(); });
+        this.peer.on('error', (err) => { console.error('Peer error:', err); this._emitStatus('error', err.message); });
+    }
+
+    _handleConnection(conn) {
+        conn.on('open', () => {
+            const peerId = conn.peer;
+            // ساختار داده برای هر همتا: شماره ارسال و دریافت و بافر پیام‌های خارج از ترتیب
+            connectedPeers.set(peerId, {
+                conn: conn,
+                name: 'در حال دریافت...',
+                outSeq: 1,
+                expectedSeq: 1,
+                pendingBuffer: new Map() // seq -> message
+            });
+            // ارسال HELLO برای معرفی نام
+            conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
+            updateUsersBar();
+            if (this.callbacks.onData) this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
+        });
+        conn.on('data', (data) => this._processIncoming(conn.peer, data));
+        conn.on('close', () => {
+            const peerInfo = connectedPeers.get(conn.peer);
+            if (peerInfo) {
+                if (this.callbacks.onData) this.callbacks.onData('system', { type: 'LEAVE', peerId: conn.peer, name: peerInfo.name });
+                connectedPeers.delete(conn.peer);
+                updateUsersBar();
+            }
+        });
+        conn.on('error', (err) => console.warn('Connection error:', err));
+    }
+
+    _processIncoming(senderId, data) {
+        if (data.type === 'HELLO') {
+            const peerInfo = connectedPeers.get(senderId);
+            if (peerInfo) {
+                peerInfo.name = sanitizeName(data.name);
+                updateUsersBar();
+            }
+            if (this.callbacks.onData) this.callbacks.onData(senderId, data);
         }
-        _bindPlayerEvents() {
-            this.player.addEventListener('play', () => this._onLocalPlay());
-            this.player.addEventListener('pause', () => this._onLocalPause());
-            this.player.addEventListener('waiting', () => this._onBufferingStart());
-            this.player.addEventListener('canplay', () => this._onBufferingEnd());
-            this.player.addEventListener('seeked', () => this._onLocalSeekThrottled());
-            this.player.addEventListener('ratechange', () => this._onLocalRateChange());
+        else if (data.type === 'CHAT') {
+            this._handleChat(senderId, data);
         }
-        _onLocalPlay() { if (!this.syncLock) this._broadcastSync('play', this.player.currentTime); }
-        _onLocalPause() { if (!this.syncLock) this._broadcastSync('pause', this.player.currentTime); }
-        _onLocalSeekThrottled() {
-            if (this.syncLock) return;
+        else if (data.type === 'REQ') {
+            // درخواست پیام‌های گم شده – در این نسخه ساده صرفاً لاگ می‌کنیم (برای پیاده‌سازی کامل نیاز به کش پیام‌های ارسالی است)
+            console.log('Missing request from', senderId, data.fromSeq, data.toSeq);
+        }
+        else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY') {
+            if (this.callbacks.onData) this.callbacks.onData(senderId, data);
+        }
+    }
+
+    _handleChat(senderId, msg) {
+        const peerInfo = connectedPeers.get(senderId);
+        if (!peerInfo) return;
+        const expected = peerInfo.expectedSeq;
+        const receivedSeq = msg.seq;
+        if (receivedSeq === expected) {
+            this._deliverMessage(senderId, msg);
+            peerInfo.expectedSeq++;
+            // بررسی بافر برای پیام‌های بعدی
+            let next = peerInfo.expectedSeq;
+            while (peerInfo.pendingBuffer.has(next)) {
+                this._deliverMessage(senderId, peerInfo.pendingBuffer.get(next));
+                peerInfo.pendingBuffer.delete(next);
+                next++;
+                peerInfo.expectedSeq++;
+            }
+        } else if (receivedSeq > expected) {
+            // پیام جلوتر – ذخیره در بافر و درخواست مجدد
+            peerInfo.pendingBuffer.set(receivedSeq, msg);
+            // ارسال درخواست مجدد برای بازه گم شده
+            const conn = peerInfo.conn;
+            if (conn && conn.open) {
+                conn.send({ type: 'REQ', fromSeq: expected, toSeq: receivedSeq - 1 });
+            }
+        } else {
+            // پیام تکراری یا قدیمی – نادیده
+        }
+    }
+
+    _deliverMessage(senderId, msg) {
+        const isSelf = (msg.senderId === myPeerId);
+        let replyText = null;
+        if (msg.replyToSeq) {
+            // تلاش برای یافتن متن پیام اصلی در DOM
+            const originalKey = `${msg.senderId}:${msg.replyToSeq}`;
+            const originalDiv = document.querySelector(`.chat-message[data-msg-key="${originalKey}"]`);
+            if (originalDiv) {
+                const textDiv = originalDiv.querySelector('div:not(.msg-info):not(.reply-indicator)');
+                if (textDiv) replyText = textDiv.innerText;
+            }
+            if (!replyText) replyText = `پیام #${msg.replyToSeq}`;
+        }
+        displayMessage(msg.senderId, msg.seq, msg.text, msg.sender, isSelf, msg.replyToSeq, replyText);
+    }
+
+    sendToAll(type, payload) {
+        for (let [peerId, info] of connectedPeers.entries()) {
+            const conn = info.conn;
+            if (conn && conn.open) {
+                if (type === 'CHAT') {
+                    const seq = info.outSeq++;
+                    const message = {
+                        type: 'CHAT',
+                        seq: seq,
+                        text: payload.text,
+                        sender: myName,
+                        senderId: myPeerId,
+                        replyToSeq: payload.replyToSeq || null,
+                        timestamp: Date.now()
+                    };
+                    conn.send(message);
+                    // نمایش پیام خودمان (با seq متناظر)
+                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, null);
+                } else {
+                    conn.send({ type, ...payload });
+                }
+            }
+        }
+    }
+
+    connect(remoteId) {
+        if (remoteId === myPeerId || connectedPeers.has(remoteId)) return;
+        const conn = this.peer.connect(remoteId, { reliable: true });
+        // اتصال به صورت ناهمگام، رویداد open در this._handleConnection مدیریت می‌شود
+        conn.on('open', () => {
+            // پس از باز شدن اتصال، اطلاعات به connectedPeers اضافه می‌شود (در _handleConnection)
+        });
+        this._handleConnection(conn);
+    }
+
+    onData(cb) { this.callbacks.onData = cb; }
+    onStatus(cb) { this.callbacks.onStatus = cb; }
+    _emitStatus(type, detail) { if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() }); }
+    destroy() { if (this.peer) this.peer.destroy(); }
+}
+
+// ====================== موتور همگام‌سازی ویدئو (بهینه موبایل) ======================
+class VideoSyncEngine {
+    constructor(player, network) {
+        this.player = player;
+        this.network = network;
+        this.syncLock = false;
+        this.bufferingPeers = new Set();
+        this.clockOffset = new Map();
+        this.latencySamples = new Map();
+        this.maxLatencySamples = 8;
+        this.lastSyncTime = 0;
+        this.SYNC_THROTTLE = 200;
+        this._bindEvents();
+    }
+    _bindEvents() {
+        this.player.addEventListener('play', () => this._onLocalPlay());
+        this.player.addEventListener('pause', () => this._onLocalPause());
+        this.player.addEventListener('waiting', () => this._onBufferingStart());
+        this.player.addEventListener('canplay', () => this._onBufferingEnd());
+        this.player.addEventListener('seeked', () => this._onLocalSeekThrottled());
+        this.player.addEventListener('ratechange', () => this._onLocalRateChange());
+    }
+    _onLocalPlay() { if (!this.syncLock) this._broadcast('play', this.player.currentTime); }
+    _onLocalPause() { if (!this.syncLock) this._broadcast('pause', this.player.currentTime); }
+    _onLocalSeekThrottled() {
+        if (this.syncLock) return;
+        const now = Date.now();
+        if (now - this.lastSyncTime < this.SYNC_THROTTLE) return;
+        this.lastSyncTime = now;
+        this._broadcast('seek', this.player.currentTime);
+    }
+    _onLocalRateChange() { if (!this.syncLock) this._broadcastSpeed(this.player.playbackRate); }
+    _onBufferingStart() { this._broadcastStatus('buffering', true); }
+    _onBufferingEnd() { this._broadcastStatus('buffering', false); }
+    _broadcast(action, time) {
+        for (let [peerId, info] of connectedPeers.entries()) {
+            if (info.conn && info.conn.open) {
+                info.conn.send({ type: 'SYNC', action, time, senderTime: Date.now() });
+            }
+        }
+    }
+    _broadcastSpeed(rate) {
+        for (let [peerId, info] of connectedPeers.entries()) {
+            if (info.conn && info.conn.open) info.conn.send({ type: 'SPEED', rate });
+        }
+    }
+    _broadcastStatus(key, value) {
+        for (let [peerId, info] of connectedPeers.entries()) {
+            if (info.conn && info.conn.open) info.conn.send({ type: 'STATUS', key, value });
+        }
+    }
+    setPlaybackRate(rate) {
+        if (this.player.playbackRate !== rate) this.player.playbackRate = rate;
+        this._broadcastSpeed(rate);
+    }
+    handleIncoming(senderId, data) {
+        if (data.type === 'SYNC') this._applySync(data.action, data.time, data.senderTime);
+        else if (data.type === 'SPEED') this.player.playbackRate = data.rate;
+        else if (data.type === 'STATUS') this._applyStatus(senderId, data.key, data.value);
+    }
+    _applyStatus(senderId, key, value) {
+        if (key === 'buffering') {
+            if (value) this.bufferingPeers.add(senderId);
+            else this.bufferingPeers.delete(senderId);
+            this._checkBuffering();
+        }
+    }
+    _checkBuffering() {
+        if (this.bufferingPeers.size > 0 && !this.player.paused) this.player.pause();
+        else if (this.bufferingPeers.size === 0 && this.player.paused && this._lastRemoteAction === 'play') this.player.play().catch(()=>{});
+    }
+    _applySync(action, time, senderTime) {
+        if (this.syncLock) return;
+        this.syncLock = true;
+        let compensated = time;
+        if (senderTime) {
             const now = Date.now();
-            if (now - this.lastSyncTime < this.SYNC_THROTTLE) return;
-            this.lastSyncTime = now;
-            this._broadcastSync('seek', this.player.currentTime);
+            const elapsed = (now - senderTime) / 1000;
+            compensated = time + elapsed;
         }
-        _onLocalRateChange() { if (!this.syncLock) this._broadcastSpeed(this.player.playbackRate); }
-        _onBufferingStart() { this._broadcastStatus('buffering', true); }
-        _onBufferingEnd() { this._broadcastStatus('buffering', false); }
-        _broadcastSync(action, time) {
-            for (let peerId of this.getConnectedPeers()) {
-                const peerData = this.network.connections.get(peerId);
-                if (peerData && peerData.conn) peerData.conn.send({ type: 'SYNC', action, time, senderTime: Date.now() });
+        try {
+            if (this.player.src && Math.abs(this.player.currentTime - compensated) > 0.5) {
+                this.player.currentTime = compensated;
             }
-        }
-        _broadcastSpeed(rate) {
-            for (let peerId of this.getConnectedPeers()) {
-                const peerData = this.network.connections.get(peerId);
-                if (peerData && peerData.conn) peerData.conn.send({ type: 'SPEED', rate });
-            }
-        }
-        _broadcastStatus(key, value) {
-            for (let peerId of this.getConnectedPeers()) {
-                const peerData = this.network.connections.get(peerId);
-                if (peerData && peerData.conn) peerData.conn.send({ type: 'STATUS', key, value });
-            }
-        }
-        setPlaybackRate(rate) {
-            if (this.player.playbackRate !== rate) this.player.playbackRate = rate;
-            this._broadcastSpeed(rate);
-        }
-        handleIncomingSync(senderId, data) {
-            if (data.type === 'SYNC') this._applySync(senderId, data.action, data.time, data.senderTime);
-            else if (data.type === 'SPEED') this.player.playbackRate = data.rate;
-            else if (data.type === 'STATUS') this._applyStatus(senderId, data.key, data.value);
-        }
-        _applyStatus(senderId, key, value) {
-            if (key === 'buffering') {
-                if (value) this.bufferingPeers.add(senderId);
-                else this.bufferingPeers.delete(senderId);
-                this._checkBufferingState();
-            }
-        }
-        _checkBufferingState() {
-            if (this.bufferingPeers.size > 0 && !this.player.paused) this.player.pause();
-            else if (this.bufferingPeers.size === 0 && this.player.paused && this._lastRemoteAction === 'play') this.player.play().catch(()=>{});
-        }
-        _applySync(senderId, action, time, senderTime) {
-            if (this.syncLock) return;
-            this.syncLock = true;
-            let compensatedTime = time;
-            if (senderTime) {
-                const now = Date.now();
-                let offset = 0;
-                if (this.clockOffset.has(senderId)) offset = this.clockOffset.get(senderId).offset || 0;
-                const elapsed = (now - (senderTime - offset)) / 1000;
-                compensatedTime = time + elapsed;
-                if (!this.latencySamples.has(senderId)) this.latencySamples.set(senderId, []);
-                const samples = this.latencySamples.get(senderId);
-                const rtt = now - senderTime;
-                const estOffset = rtt/2;
-                samples.push(estOffset);
-                if(samples.length>this.maxLatencySamples) samples.shift();
-                const avgOffset = samples.reduce((a,b)=>a+b,0)/samples.length;
-                this.clockOffset.set(senderId, { offset: avgOffset, lastUpdate: now });
-            }
-            try {
-                if (this.player.src && Math.abs(this.player.currentTime - compensatedTime) > 0.5) {
-                    this.player.currentTime = compensatedTime;
-                }
-                if (action === 'play' || action === 'seek') this.player.play().catch(()=>{});
-                else if (action === 'pause') this.player.pause();
-                this._lastRemoteAction = action;
-            } finally { setTimeout(()=>{ this.syncLock = false; }, 300); }
-        }
-        destroy() {}
+            if (action === 'play' || action === 'seek') this.player.play().catch(()=>{});
+            else if (action === 'pause') this.player.pause();
+            this._lastRemoteAction = action;
+        } finally { setTimeout(()=>{ this.syncLock = false; }, 300); }
     }
+    destroy() {}
+}
 
-    // ========== راه‌اندازی اصلی ==========
-    const network = new ReliableChatNetwork();
-    function getConnectedPeerIds() { return Array.from(network.connections.keys()); }
+// ====================== راه‌اندازی اصلی برنامه ======================
+const network = new PeerNetwork();
 
-    // توابع کمکی
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+function sendChatMessage() {
+    let text = msgInput.value.trim();
+    if (!text) return;
+    let replyToSeq = null;
+    if (pendingReply) {
+        replyToSeq = pendingReply.seq;
+        pendingReply = null;
+        msgInput.placeholder = 'پیام...';
     }
+    network.sendToAll('CHAT', { text, replyToSeq });
+    msgInput.value = '';
+}
 
-    function sanitizeName(name) {
-        let cleaned = name.trim().slice(0, 20);
-        cleaned = cleaned.replace(/[<>]/g, '');
-        return cleaned || 'ناشناس';
-    }
+btnLogin.addEventListener('click', () => {
+    let rawName = nameInput.value.trim();
+    if (!rawName) return alert('لطفاً نام خود را وارد کنید');
+    myName = sanitizeName(rawName);
+    loginOverlay.style.display = 'none';
+    mainApp.style.display = 'flex';
+    updateUsersBar();
 
-    function formatTime(seconds) {
-        if (isNaN(seconds)) return "00:00";
-        const hrs = Math.floor(seconds / 3600);
-        const mins = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-        if (hrs > 0) return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
-        return `${mins}:${secs.toString().padStart(2,'0')}`;
-    }
-
-    function updateUsersBar() {
-        let html = `<span class="user-chip">👤 ${escapeHtml(myName)}</span>`;
-        for (let [id, data] of network.connections.entries()) {
-            html += `<span class="user-chip">👤 ${escapeHtml(data.name)}</span>`;
+    network.init();
+    network.onStatus((status) => {
+        if (status.type === 'ready') {
+            statusTag.textContent = `🆔 ${status.detail.substring(0,6)}`;
+            // اتصال به MQTT برای یافتن همتایان
+            mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+            mqttClient.on('connect', () => {
+                mqttClient.subscribe('cinema_mesh_room_pro');
+                mqttClient.publish('cinema_mesh_room_pro', JSON.stringify({ peerId: myPeerId, name: myName }));
+            });
+            mqttClient.on('message', (topic, message) => {
+                try {
+                    const data = JSON.parse(message.toString());
+                    if (data.peerId && data.peerId !== myPeerId && !connectedPeers.has(data.peerId)) {
+                        network.connect(data.peerId);
+                    }
+                } catch(e) {}
+            });
+            // بارگذاری ویدئوی پیش‌فرض
+            if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
+            player.src = DEFAULT_VIDEO_URL;
+            player.load();
+        } else if (status.type === 'error') {
+            statusTag.textContent = `⚠️ خطا`;
         }
-        usersBar.innerHTML = html;
-    }
+    });
 
-    function loadDefaultVideo() {
-        if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
-        player.src = DEFAULT_VIDEO_URL;
-        player.load();
-    }
-
-    // ورود
-    btnLogin.addEventListener('click', () => {
-        let rawName = nameInput.value.trim();
-        if (!rawName) return alert('لطفاً نام خود را وارد کنید');
-        myName = sanitizeName(rawName);
-        loginOverlay.style.display = 'none';
-        mainApp.style.display = 'flex';
-        updateUsersBar();
-
-        network.init();
-        network.onStatus((status) => {
-            if (status.type === 'ready') {
-                statusTag.textContent = `🆔 ${status.detail.substring(0,6)}`;
-                mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-                mqttClient.on('connect', () => {
-                    mqttClient.subscribe('cinema_mesh_room_pro');
-                    mqttClient.publish('cinema_mesh_room_pro', JSON.stringify({ peerId: myPeerId, name: myName }));
-                });
-                mqttClient.on('message', (topic, message) => {
-                    try {
-                        const data = JSON.parse(message.toString());
-                        if (data.peerId && data.peerId !== myPeerId && !network.connections.has(data.peerId)) {
-                            network.connect(data.peerId);
-                        }
-                    } catch(e) {}
-                });
-                loadDefaultVideo();
-            }
-        });
-
-        network.onPeerConnected((peerId, conn) => {
-            // ارسال HELLO برای تبادل نام
-            if (conn && conn.open) {
-                conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
-            }
-            updateUsersBar();
-        });
-
-        network.onPeerDisconnected((peerId) => {
-            updateUsersBar();
-            // نمایش پیام سیستمی خروج
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'chat-message msg-other';
-            msgDiv.style.backgroundColor = '#555';
-            msgDiv.innerHTML = `<div>🚪 کاربر ${escapeHtml(network.connections.get(peerId)?.name || peerId.substring(0,6))} خارج شد</div><div class="msg-info">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-            messagesDiv.appendChild(msgDiv);
+    network.onData((senderId, data) => {
+        if (data.type === 'JOIN') {
+            // پیام سیستمی ورود
+            const div = document.createElement('div');
+            div.className = 'chat-message msg-other';
+            div.style.backgroundColor = '#555';
+            div.innerHTML = `<div>✨ کاربر ${escapeHtml(connectedPeers.get(data.peerId)?.name || 'جدید')} وارد شد</div><div class="msg-info">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+            messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
-
-        network.onData((senderId, data) => {
-            if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED') {
-                if (videoSyncEngine) videoSyncEngine.handleIncomingSync(senderId, data);
-            } else if (data.type === 'NOTIFY') {
-                // اعلان سیستمی
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'chat-message msg-other';
-                msgDiv.style.backgroundColor = '#555';
-                msgDiv.innerHTML = `<div>${escapeHtml(data.text)}</div><div class="msg-info">اطلاع • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-                messagesDiv.appendChild(msgDiv);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-        });
-
-        videoSyncEngine = new VideoSyncEngine(player, network, getConnectedPeerIds);
+        } else if (data.type === 'LEAVE') {
+            const div = document.createElement('div');
+            div.className = 'chat-message msg-other';
+            div.style.backgroundColor = '#555';
+            div.innerHTML = `<div>🚪 کاربر ${escapeHtml(data.name || 'ناشناس')} خارج شد</div><div class="msg-info">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        } else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED') {
+            if (videoSync) videoSync.handleIncoming(senderId, data);
+        } else if (data.type === 'NOTIFY') {
+            const div = document.createElement('div');
+            div.className = 'chat-message msg-other';
+            div.style.backgroundColor = '#555';
+            div.innerHTML = `<div>${escapeHtml(data.text)}</div><div class="msg-info">اطلاع • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
     });
 
-    // ارسال پیام چت
-    function sendChatMessage() {
-        let text = msgInput.value.trim();
-        if (!text) return;
-        let replyToSeq = null;
-        if (window._pendingReply) {
-            replyToSeq = window._pendingReply.seq;
-            window._pendingReply = null;
-            msgInput.placeholder = 'پیام...';
-        }
-        for (let peerId of getConnectedPeerIds()) {
-            network.sendMessage(peerId, text, replyToSeq);
-        }
-        msgInput.value = '';
-    }
-    sendBtn.addEventListener('click', sendChatMessage);
-    msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+    videoSync = new VideoSyncEngine(player, network);
+});
 
-    // کنترل‌های ویدئو
-    btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
-    btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
-    speedSelect.addEventListener('change', () => { if(videoSyncEngine) videoSyncEngine.setPlaybackRate(parseFloat(speedSelect.value)); });
+// رویدادهای UI
+sendBtn.addEventListener('click', sendChatMessage);
+msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
+btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
+speedSelect.addEventListener('change', () => { if(videoSync) videoSync.setPlaybackRate(parseFloat(speedSelect.value)); });
 
-    // نوار پیشرفت
-    seekBar.addEventListener('input', function() {
-        if (!player.duration) return;
-        isSeeking = true;
-        const seekTo = (seekBar.value / 100) * player.duration;
-        player.currentTime = seekTo;
-    });
-    seekBar.addEventListener('change', () => { isSeeking = false; });
-    function updateProgress() {
-        if (!isSeeking && player.duration) {
-            const percent = (player.currentTime / player.duration) * 100;
-            seekBar.value = percent;
-            currentTimeSpan.textContent = formatTime(player.currentTime);
-        }
-        if (player.duration && !isNaN(player.duration)) {
-            durationSpan.textContent = formatTime(player.duration);
-            seekBar.max = 100;
-        }
-        rafId = requestAnimationFrame(updateProgress);
+seekBar.addEventListener('input', function() {
+    if (!player.duration) return;
+    isSeeking = true;
+    const seekTo = (seekBar.value / 100) * player.duration;
+    player.currentTime = seekTo;
+});
+seekBar.addEventListener('change', () => { isSeeking = false; });
+
+function updateProgress() {
+    if (!isSeeking && player.duration) {
+        seekBar.value = (player.currentTime / player.duration) * 100;
+        currentTimeSpan.textContent = formatTime(player.currentTime);
     }
-    player.addEventListener('loadedmetadata', () => {
+    if (player.duration && !isNaN(player.duration)) {
         durationSpan.textContent = formatTime(player.duration);
         seekBar.max = 100;
-    });
+    }
     rafId = requestAnimationFrame(updateProgress);
-    fullscreenBtn.addEventListener('click', () => {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-        else document.exitFullscreen();
-    });
-    fileUploader.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
-            const url = URL.createObjectURL(file);
-            player._blobUrl = url;
-            player.src = url;
-            player.load();
-            for (let peerId of getConnectedPeerIds()) {
-                const peerData = network.connections.get(peerId);
-                if (peerData && peerData.conn) peerData.conn.send({ type: 'NOTIFY', text: `${myName} یک ویدیوی محلی بارگذاری کرد (فقط برای خودش قابل مشاهده)` });
-            }
-        }
-    });
+}
+player.addEventListener('loadedmetadata', () => {
+    durationSpan.textContent = formatTime(player.duration);
+    seekBar.max = 100;
+});
+rafId = requestAnimationFrame(updateProgress);
 
-    window.addEventListener('beforeunload', () => {
-        if (rafId) cancelAnimationFrame(rafId);
-        if (network) network.destroy();
-        if (mqttClient) mqttClient.end();
-    });
-})();
+fullscreenBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+});
+fileUploader.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
+        const url = URL.createObjectURL(file);
+        player._blobUrl = url;
+        player.src = url;
+        player.load();
+        network.sendToAll('NOTIFY', { text: `${myName} یک ویدیوی محلی بارگذاری کرد (فقط برای خودش قابل مشاهده)` });
+    }
+});
+
+window.addEventListener('beforeunload', () => {
+    if (rafId) cancelAnimationFrame(rafId);
+    if (network) network.destroy();
+    if (mqttClient) mqttClient.end();
+});
 </script>
 </body>
 </html>
