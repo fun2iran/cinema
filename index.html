@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | مقاوم در برابر قطع اینترنت</title>
+    <title>سینما کر | ریپلای به پیام‌های سیستمی</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
+        /* تمام استایل‌ها مثل قبل (بدون تغییر) */
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
             background: #0b141a;
@@ -338,14 +339,15 @@
         let connections = new Map(); // peerId -> { conn, name }
         let currentReply = null;
         let msgCounter = 1;
+        let sysMsgCounter = 1; // برای پیام‌های سیستمی
         let historyMessages = [];
         const MAX_HISTORY = 20;
         let syncLock = false;
         let lastSyncTime = 0;
         let displayedMsgSet = new Set();
         let isPeerReady = false;
-        let isReconnecting = false; // جلوگیری از چندباره
-        let knownPeers = new Set(); // ذخیره peerId هایی که قبلاً به آنها متصل بوده‌ایم (برای reconnect)
+        let isReconnecting = false;
+        let knownPeers = new Set();
         
         // ====================== تابع تولید رنگ ======================
         function stringToColor(str) {
@@ -384,17 +386,18 @@
             usersList.innerHTML = html;
         }
         
-        function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName) {
+        // تابع اصلی اضافه کردن پیام (با قابلیت سیستمی)
+        function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName, isSystem = false) {
             const key = `${senderId}:${msgId}`;
             if (displayedMsgSet.has(key)) return;
             displayedMsgSet.add(key);
             
             const div = document.createElement('div');
             div.className = `msg ${isSelf ? 'msg-self' : 'msg-other'}`;
-            if (!isSelf && senderId) {
-                div.style.backgroundColor = stringToColor(senderId);
-            } else if (!isSelf) {
+            if (isSystem) {
                 div.style.backgroundColor = '#555';
+            } else if (!isSelf && senderId) {
+                div.style.backgroundColor = stringToColor(senderId);
             }
             div.setAttribute('data-key', key);
             let content = '';
@@ -419,7 +422,7 @@
                 e.stopPropagation();
                 currentReply = {
                     peerId: btn.dataset.peer,
-                    msgId: parseInt(btn.dataset.id),
+                    msgId: btn.dataset.id,  // می‌تواند شامل 'sys_xxx' باشد
                     text: btn.dataset.text,
                     senderName: btn.dataset.name
                 };
@@ -428,6 +431,7 @@
                 msgInput.focus();
             });
             
+            // ذخیره در تاریخچه (برای پیام‌های سیستمی نیز)
             const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
             if (!existing) {
                 historyMessages.push({
@@ -438,19 +442,19 @@
                     replyToId: replyToId,
                     replyText: replyText,
                     replySenderName: replySenderName,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    isSystem: isSystem
                 });
                 if (historyMessages.length > MAX_HISTORY) historyMessages.shift();
             }
         }
         
+        // پیام سیستمی جدید با دکمه پاسخ
         function addSystemMessage(text) {
-            const div = document.createElement('div');
-            div.className = 'msg msg-other';
-            div.style.backgroundColor = '#555';
-            div.innerHTML = `<div>${escapeHtml(text)}</div><div class="msg-footer">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-            messagesList.appendChild(div);
-            messagesList.scrollTop = messagesList.scrollHeight;
+            const msgId = `sys_${sysMsgCounter++}`;
+            const senderId = 'system';
+            const senderName = 'سیستم';
+            addMessageToUI(senderId, msgId, text, senderName, false, null, null, null, true);
         }
         
         function sendHistoryToPeer(conn) {
@@ -514,7 +518,7 @@
                         const key = `${msg.senderId}:${msg.id}`;
                         if (!displayedMsgSet.has(key)) {
                             const isSelf = (msg.senderId === myPeerId);
-                            addMessageToUI(msg.senderId, msg.id, msg.text, msg.senderName, isSelf, msg.replyToId, msg.replyText, msg.replySenderName);
+                            addMessageToUI(msg.senderId, msg.id, msg.text, msg.senderName, isSelf, msg.replyToId, msg.replyText, msg.replySenderName, msg.isSystem);
                         }
                     }
                 }
@@ -549,21 +553,17 @@
             });
         }
         
-        // تابع برای برقراری مجدد اتصال به همه همتایان شناخته شده
         function reconnectToAllPeers() {
             if (!peer || !isPeerReady) return;
             for (let peerId of knownPeers) {
                 if (peerId !== myPeerId && !connections.has(peerId)) {
-                    console.log('Reconnecting to', peerId);
                     const conn = peer.connect(peerId, { reliable: true });
                     if (conn) setupConnection(conn);
                 }
             }
         }
         
-        // همگام‌سازی وضعیت ویدئو پس از اتصال مجدد
         function syncVideoStateAfterReconnect() {
-            // ارسال وضعیت فعلی ویدئو به همه همتایان موجود
             const currentTime = video.currentTime;
             const isPlaying = !video.paused;
             const rate = video.playbackRate;
@@ -575,20 +575,16 @@
             }
         }
         
-        // ====================== مدیریت قطع و وصل اینترنت ======================
         function handleOnline() {
             if (isReconnecting) return;
             isReconnecting = true;
             addSystemMessage(`🌐 اینترنت وصل شد. در حال بازیابی اتصالات...`);
             statusText.innerText = `🔄 بازیابی...`;
-            // اگر MQTT قطع شده بود، reconnect خودکار می‌شود ولی ما خودمان دوباره subscribe می‌کنیم
             if (mqttClient && !mqttClient.connected) {
                 mqttClient.reconnect();
             }
-            // بازسازی اتصالات Peer
             setTimeout(() => {
                 reconnectToAllPeers();
-                // بعد از کمی تأخیر، وضعیت ویدئو را همگام کن
                 setTimeout(() => {
                     syncVideoStateAfterReconnect();
                     statusText.innerText = `✅ متصل`;
@@ -601,10 +597,8 @@
         function handleOffline() {
             addSystemMessage(`⚠️ اینترنت قطع شد. در صورت بازگشت، اتصال خودکار برقرار می‌شود.`);
             statusText.innerText = `📡 قطع اینترنت`;
-            // نیازی به切断 اتصالات نیست، خودشان بسته می‌شوند
         }
         
-        // ====================== راه‌اندازی اولیه Peer و MQTT ======================
         function initPeerAndMqtt() {
             const iceServers = [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -629,18 +623,14 @@
                     try {
                         const data = JSON.parse(msg.toString());
                         if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId) && peer && isPeerReady) {
-                            knownPeers.add(data.peerId); // ذخیره برای reconnect
+                            knownPeers.add(data.peerId);
                             const conn = peer.connect(data.peerId, { reliable: true });
                             if (conn) setupConnection(conn);
                         }
                     } catch(e) {}
                 });
-                mqttClient.on('close', () => {
-                    statusText.innerText = `⚠️ قطع MQTT`;
-                });
-                mqttClient.on('reconnect', () => {
-                    statusText.innerText = `🔄 reconnect MQTT...`;
-                });
+                mqttClient.on('close', () => { statusText.innerText = `⚠️ قطع MQTT`; });
+                mqttClient.on('reconnect', () => { statusText.innerText = `🔄 reconnect MQTT...`; });
                 
                 video.src = VIDEO_URL;
                 video.load();
@@ -654,7 +644,6 @@
             peer.on('disconnected', () => {
                 statusText.innerText = `⚠️ Peer disconnected`;
                 isPeerReady = false;
-                // تلاش برای reconnect خودکار peer
                 if (peer) peer.reconnect();
             });
             
@@ -699,7 +688,6 @@
             updateUsersUI();
             initPeerAndMqtt();
             
-            // اضافه کردن شنونده‌های online/offline
             window.addEventListener('online', handleOnline);
             window.addEventListener('offline', handleOffline);
         });
