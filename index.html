@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | ریپلای به پیام‌های سیستمی</title>
+    <title>سینما کر | با دکمه شکلک</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        /* تمام استایل‌ها مثل قبل (بدون تغییر) */
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
             background: #0b141a;
@@ -226,6 +225,7 @@
         .input-row {
             display: flex;
             gap: 8px;
+            align-items: center;
         }
         #msgInput {
             flex: 1;
@@ -242,6 +242,46 @@
             background: #00a884;
             padding: 0 20px;
         }
+        /* دکمه شکلک */
+        .emoji-btn {
+            background: #2a3942;
+            border: none;
+            color: white;
+            font-size: 20px;
+            padding: 6px 12px;
+            border-radius: 25px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .emoji-panel {
+            position: absolute;
+            bottom: 70px;
+            left: 10px;
+            right: 10px;
+            background: #1e2a32;
+            border-radius: 20px;
+            padding: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            z-index: 20;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            border: 1px solid #2f3b44;
+        }
+        .emoji-item {
+            font-size: 28px;
+            background: #2a3942;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+        .emoji-item:active { background: #3b4a54; transform: scale(0.95); }
         .cancel-reply {
             background: none;
             border: none;
@@ -251,6 +291,7 @@
         @media (max-width: 400px) {
             button, select, label { padding: 4px 10px; font-size: 11px; }
             .time { font-size: 10px; }
+            .emoji-item { width: 45px; height: 45px; font-size: 24px; }
         }
         :fullscreen .top-fixed { position: sticky; top: 0; }
         :-webkit-full-screen .top-fixed { position: sticky; top: 0; }
@@ -297,7 +338,18 @@
             </div>
             <div class="input-row">
                 <input type="text" id="msgInput" placeholder="پیام...">
+                <button id="emojiBtn" class="emoji-btn">😊</button>
                 <button id="sendBtn">ارسال</button>
+            </div>
+            <div id="emojiPanel" class="emoji-panel" style="display: none;">
+                <div class="emoji-item" data-emoji="😂">😂</div>
+                <div class="emoji-item" data-emoji="😱">😱</div>
+                <div class="emoji-item" data-emoji="😢">😢</div>
+                <div class="emoji-item" data-emoji="🔥">🔥</div>
+                <div class="emoji-item" data-emoji="😴">😴</div>
+                <div class="emoji-item" data-emoji="😍">😍</div>
+                <div class="emoji-item" data-emoji="😲">😲</div>
+                <div class="emoji-item" data-emoji="👏">👏</div>
             </div>
         </div>
     </div>
@@ -330,6 +382,8 @@
         const replyPreviewBox = document.getElementById('replyPreviewBox');
         const replyPreviewText = document.getElementById('replyPreviewText');
         const cancelReplyBtn = document.getElementById('cancelReplyBtn');
+        const emojiBtn = document.getElementById('emojiBtn');
+        const emojiPanel = document.getElementById('emojiPanel');
         
         // متغیرهای وضعیت
         let myName = '';
@@ -339,7 +393,7 @@
         let connections = new Map(); // peerId -> { conn, name }
         let currentReply = null;
         let msgCounter = 1;
-        let sysMsgCounter = 1; // برای پیام‌های سیستمی
+        let sysMsgCounter = 1;
         let historyMessages = [];
         const MAX_HISTORY = 20;
         let syncLock = false;
@@ -348,6 +402,29 @@
         let isPeerReady = false;
         let isReconnecting = false;
         let knownPeers = new Set();
+        
+        // ====================== شکلک ======================
+        emojiBtn.addEventListener('click', () => {
+            if (emojiPanel.style.display === 'none') {
+                emojiPanel.style.display = 'flex';
+            } else {
+                emojiPanel.style.display = 'none';
+            }
+        });
+        document.querySelectorAll('.emoji-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const emoji = item.getAttribute('data-emoji');
+                msgInput.value += emoji;
+                msgInput.focus();
+                emojiPanel.style.display = 'none';
+            });
+        });
+        // بستن پنل با کلیک بیرون
+        document.addEventListener('click', (e) => {
+            if (!emojiBtn.contains(e.target) && !emojiPanel.contains(e.target)) {
+                emojiPanel.style.display = 'none';
+            }
+        });
         
         // ====================== تابع تولید رنگ ======================
         function stringToColor(str) {
@@ -386,7 +463,6 @@
             usersList.innerHTML = html;
         }
         
-        // تابع اصلی اضافه کردن پیام (با قابلیت سیستمی)
         function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName, isSystem = false) {
             const key = `${senderId}:${msgId}`;
             if (displayedMsgSet.has(key)) return;
@@ -422,7 +498,7 @@
                 e.stopPropagation();
                 currentReply = {
                     peerId: btn.dataset.peer,
-                    msgId: btn.dataset.id,  // می‌تواند شامل 'sys_xxx' باشد
+                    msgId: btn.dataset.id,
                     text: btn.dataset.text,
                     senderName: btn.dataset.name
                 };
@@ -431,7 +507,6 @@
                 msgInput.focus();
             });
             
-            // ذخیره در تاریخچه (برای پیام‌های سیستمی نیز)
             const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
             if (!existing) {
                 historyMessages.push({
@@ -449,7 +524,6 @@
             }
         }
         
-        // پیام سیستمی جدید با دکمه پاسخ
         function addSystemMessage(text) {
             const msgId = `sys_${sysMsgCounter++}`;
             const senderId = 'system';
