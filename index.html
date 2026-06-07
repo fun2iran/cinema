@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | نسخه نهایی پایدار موبایل</title>
+    <title>سینما کر | نسخه نهایی موبایل با اسکرول خودکار</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -16,7 +16,6 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            /* برای نوارهای سیستم */
             padding-bottom: env(safe-area-inset-bottom);
         }
         .login {
@@ -57,7 +56,6 @@
             height: 100%;
             overflow: hidden;
         }
-        /* بخش بالایی ثابت - با sticky برای حالت فول اسکرین */
         .top-fixed {
             flex-shrink: 0;
             background: #0b141a;
@@ -214,7 +212,6 @@
             flex-direction: column;
             gap: 6px;
             flex-shrink: 0;
-            /* فاصله از نوار پایین سیستم */
             margin-bottom: env(safe-area-inset-bottom);
         }
         .reply-preview {
@@ -238,6 +235,7 @@
             color: white;
             outline: none;
             font-size: 14px;
+            scroll-margin-bottom: 20px;
         }
         #sendBtn {
             background: #00a884;
@@ -253,15 +251,8 @@
             button, select, label { padding: 4px 10px; font-size: 11px; }
             .time { font-size: 10px; }
         }
-        /* حالت تمام صفحه: اطمینان از ثابت ماندن بالایی */
-        :-webkit-full-screen .top-fixed {
-            position: sticky;
-            top: 0;
-        }
-        :fullscreen .top-fixed {
-            position: sticky;
-            top: 0;
-        }
+        :fullscreen .top-fixed { position: sticky; top: 0; }
+        :-webkit-full-screen .top-fixed { position: sticky; top: 0; }
     </style>
 </head>
 <body>
@@ -354,6 +345,17 @@
         let displayedMsgSet = new Set();
         let isPeerReady = false;
         
+        // ====================== تابع تولید رنگ ======================
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0;
+            }
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 70%, 65%)`;
+        }
+        
         // ====================== توابع کمکی ======================
         function escapeHtml(str) {
             if (!str) return '';
@@ -375,7 +377,7 @@
         function updateUsersUI() {
             let html = `<div class="user-chip">👤 ${escapeHtml(myName)}</div>`;
             for (let [id, info] of connections) {
-                html += `<div class="user-chip">👤 ${escapeHtml(info.name)}</div>`;
+                html += `<div class="user-chip" style="background: ${stringToColor(id)}; color: white;">👤 ${escapeHtml(info.name)}</div>`;
             }
             usersList.innerHTML = html;
         }
@@ -387,6 +389,11 @@
             
             const div = document.createElement('div');
             div.className = `msg ${isSelf ? 'msg-self' : 'msg-other'}`;
+            if (!isSelf && senderId) {
+                div.style.backgroundColor = stringToColor(senderId);
+            } else if (!isSelf) {
+                div.style.backgroundColor = '#555';
+            }
             div.setAttribute('data-key', key);
             let content = '';
             if (replyToId && replyText) {
@@ -417,9 +424,9 @@
                 replyPreviewText.innerText = `پاسخ به ${currentReply.senderName}: "${currentReply.text.substring(0, 50)}..."`;
                 replyPreviewBox.style.display = 'flex';
                 msgInput.focus();
+                // فوکوس باعث می‌شود که رویداد focus در پایین کار اسکرول را انجام دهد
             });
             
-            // ذخیره در تاریخچه
             const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
             if (!existing) {
                 historyMessages.push({
@@ -482,7 +489,7 @@
             msgInput.value = '';
         }
         
-        // ====================== راه‌اندازی اتصال Peer ======================
+        // ====================== راه‌اندازی اتصال ======================
         function setupConnection(conn) {
             if (connections.has(conn.peer)) return;
             conn.on('open', () => {
@@ -634,6 +641,14 @@
             replyPreviewBox.style.display = 'none';
         });
         
+        // ========== رفع مشکل پنهان شدن فیلد ورودی زیر نوار پایین ==========
+        msgInput.addEventListener('focus', () => {
+            // تأخیر برای اطمینان از باز شدن کیبورد
+            setTimeout(() => {
+                msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        });
+        
         video.addEventListener('timeupdate', () => {
             if (!video.seeking) {
                 seekBar.value = (video.currentTime / video.duration) * 100;
@@ -651,18 +666,8 @@
         });
         
         fullscreenBtn.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-            } else {
-                document.exitFullscreen();
-            }
-        });
-        
-        // در حالت فول اسکرین، اطمینان از ثابت ماندن بالایی
-        document.addEventListener('fullscreenchange', () => {
-            if (document.fullscreenElement) {
-                // هیچ اقدام خاصی نیاز نیست، CSS کار می‌کند
-            }
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
         });
         
         fileUpload.addEventListener('change', (e) => {
