@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | نسخه نهایی با پیام‌رسانی کامل</title>
+    <title>CinemaCore Pro | ریپلای کامل + پیام‌رسانی پایدار</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -342,7 +342,7 @@
     let videoSync = null;
     let isSeeking = false;
     let rafId = null;
-    let pendingReply = null;
+    let pendingReply = null; // { peerId, seq, text }
 
     // ====================== توابع کمکی ======================
     function escapeHtml(str) {
@@ -417,11 +417,12 @@
         replyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             pendingReply = { peerId: replyBtn.dataset.peer, seq: parseInt(replyBtn.dataset.seq), text: replyBtn.dataset.text };
-            msgInput.placeholder = `پاسخ به #${pendingReply.seq}: ${pendingReply.text.substring(0, 30)}...`;
+            // نمایش متن پیام اصلی در placeholder به صورت نقل قول
+            msgInput.placeholder = `پاسخ به "${pendingReply.text.substring(0, 40)}..."`;
             msgInput.focus();
         });
 
-        // درج به ترتیب شماره پیام
+        // درج بر اساس شماره پیام (ترتیب صعودی)
         let inserted = false;
         const children = messagesDiv.children;
         for (let i = 0; i < children.length; i++) {
@@ -470,7 +471,6 @@
                     name: 'در حال دریافت...',
                     outSeq: 1
                 });
-                // ارسال HELLO
                 conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
                 updateUsersBar();
                 if (this.callbacks.onData) this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
@@ -499,17 +499,7 @@
             else if (data.type === 'CHAT') {
                 // تحویل فوری پیام
                 const isSelf = (data.senderId === myPeerId);
-                let replyText = null;
-                if (data.replyToSeq) {
-                    const originalKey = `${data.senderId}:${data.replyToSeq}`;
-                    const originalDiv = document.querySelector(`.chat-message[data-msg-key="${originalKey}"]`);
-                    if (originalDiv) {
-                        const textDiv = originalDiv.querySelector('div:not(.msg-info):not(.reply-indicator)');
-                        if (textDiv) replyText = textDiv.innerText;
-                    }
-                    if (!replyText) replyText = `پیام #${data.replyToSeq}`;
-                }
-                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, replyText);
+                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, data.replyText);
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
             else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY') {
@@ -530,11 +520,12 @@
                         sender: myName,
                         senderId: myPeerId,
                         replyToSeq: payload.replyToSeq || null,
+                        replyText: payload.replyText || null,  // ارسال متن اصلی برای نمایش
                         timestamp: Date.now()
                     };
                     conn.send(message);
-                    // نمایش پیام خودمان
-                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, null);
+                    // نمایش پیام خودمان با همان replyText
+                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, payload.replyText);
                 } else {
                     conn.send({ type, ...payload });
                 }
@@ -661,12 +652,14 @@
         let text = msgInput.value.trim();
         if (!text) return;
         let replyToSeq = null;
+        let replyText = null;
         if (pendingReply) {
             replyToSeq = pendingReply.seq;
+            replyText = pendingReply.text;
             pendingReply = null;
             msgInput.placeholder = 'پیام...';
         }
-        network.sendToAll('CHAT', { text, replyToSeq });
+        network.sendToAll('CHAT', { text, replyToSeq, replyText });
         msgInput.value = '';
     }
 
