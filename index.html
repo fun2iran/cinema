@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | نسخه نهایی موبایل با اسکرول خودکار</title>
+    <title>سینما کر | مقاوم در برابر قطع اینترنت</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -344,6 +344,8 @@
         let lastSyncTime = 0;
         let displayedMsgSet = new Set();
         let isPeerReady = false;
+        let isReconnecting = false; // جلوگیری از چندباره
+        let knownPeers = new Set(); // ذخیره peerId هایی که قبلاً به آنها متصل بوده‌ایم (برای reconnect)
         
         // ====================== تابع تولید رنگ ======================
         function stringToColor(str) {
@@ -424,7 +426,6 @@
                 replyPreviewText.innerText = `پاسخ به ${currentReply.senderName}: "${currentReply.text.substring(0, 50)}..."`;
                 replyPreviewBox.style.display = 'flex';
                 msgInput.focus();
-                // فوکوس باعث می‌شود که رویداد focus در پایین کار اسکرول را انجام دهد
             });
             
             const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
@@ -548,6 +549,62 @@
             });
         }
         
+        // تابع برای برقراری مجدد اتصال به همه همتایان شناخته شده
+        function reconnectToAllPeers() {
+            if (!peer || !isPeerReady) return;
+            for (let peerId of knownPeers) {
+                if (peerId !== myPeerId && !connections.has(peerId)) {
+                    console.log('Reconnecting to', peerId);
+                    const conn = peer.connect(peerId, { reliable: true });
+                    if (conn) setupConnection(conn);
+                }
+            }
+        }
+        
+        // همگام‌سازی وضعیت ویدئو پس از اتصال مجدد
+        function syncVideoStateAfterReconnect() {
+            // ارسال وضعیت فعلی ویدئو به همه همتایان موجود
+            const currentTime = video.currentTime;
+            const isPlaying = !video.paused;
+            const rate = video.playbackRate;
+            for (let [peerId, info] of connections) {
+                if (info.conn && info.conn.open) {
+                    info.conn.send({ type: 'SYNC', action: isPlaying ? 'play' : 'pause', time: currentTime });
+                    info.conn.send({ type: 'SPEED', rate });
+                }
+            }
+        }
+        
+        // ====================== مدیریت قطع و وصل اینترنت ======================
+        function handleOnline() {
+            if (isReconnecting) return;
+            isReconnecting = true;
+            addSystemMessage(`🌐 اینترنت وصل شد. در حال بازیابی اتصالات...`);
+            statusText.innerText = `🔄 بازیابی...`;
+            // اگر MQTT قطع شده بود، reconnect خودکار می‌شود ولی ما خودمان دوباره subscribe می‌کنیم
+            if (mqttClient && !mqttClient.connected) {
+                mqttClient.reconnect();
+            }
+            // بازسازی اتصالات Peer
+            setTimeout(() => {
+                reconnectToAllPeers();
+                // بعد از کمی تأخیر، وضعیت ویدئو را همگام کن
+                setTimeout(() => {
+                    syncVideoStateAfterReconnect();
+                    statusText.innerText = `✅ متصل`;
+                    addSystemMessage(`✅ بازیابی کامل شد.`);
+                    isReconnecting = false;
+                }, 1000);
+            }, 500);
+        }
+        
+        function handleOffline() {
+            addSystemMessage(`⚠️ اینترنت قطع شد. در صورت بازگشت، اتصال خودکار برقرار می‌شود.`);
+            statusText.innerText = `📡 قطع اینترنت`;
+            // نیازی به切断 اتصالات نیست، خودشان بسته می‌شوند
+        }
+        
+        // ====================== راه‌اندازی اولیه Peer و MQTT ======================
         function initPeerAndMqtt() {
             const iceServers = [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -566,15 +623,23 @@
                 mqttClient.on('connect', () => {
                     mqttClient.subscribe('cinema_final_room');
                     mqttClient.publish('cinema_final_room', JSON.stringify({ peerId: myPeerId, name: myName }));
+                    statusText.innerText = `✅ متصل`;
                 });
                 mqttClient.on('message', (topic, msg) => {
                     try {
                         const data = JSON.parse(msg.toString());
                         if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId) && peer && isPeerReady) {
+                            knownPeers.add(data.peerId); // ذخیره برای reconnect
                             const conn = peer.connect(data.peerId, { reliable: true });
                             if (conn) setupConnection(conn);
                         }
                     } catch(e) {}
+                });
+                mqttClient.on('close', () => {
+                    statusText.innerText = `⚠️ قطع MQTT`;
+                });
+                mqttClient.on('reconnect', () => {
+                    statusText.innerText = `🔄 reconnect MQTT...`;
                 });
                 
                 video.src = VIDEO_URL;
@@ -582,7 +647,15 @@
             });
             
             peer.on('connection', (conn) => {
+                knownPeers.add(conn.peer);
                 setupConnection(conn);
+            });
+            
+            peer.on('disconnected', () => {
+                statusText.innerText = `⚠️ Peer disconnected`;
+                isPeerReady = false;
+                // تلاش برای reconnect خودکار peer
+                if (peer) peer.reconnect();
             });
             
             peer.on('error', (err) => {
@@ -625,6 +698,10 @@
             app.style.display = 'flex';
             updateUsersUI();
             initPeerAndMqtt();
+            
+            // اضافه کردن شنونده‌های online/offline
+            window.addEventListener('online', handleOnline);
+            window.addEventListener('offline', handleOffline);
         });
         
         playBtn.addEventListener('click', () => video.play());
@@ -641,9 +718,7 @@
             replyPreviewBox.style.display = 'none';
         });
         
-        // ========== رفع مشکل پنهان شدن فیلد ورودی زیر نوار پایین ==========
         msgInput.addEventListener('focus', () => {
-            // تأخیر برای اطمینان از باز شدن کیبورد
             setTimeout(() => {
                 msgInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
@@ -687,6 +762,8 @@
         window.addEventListener('beforeunload', () => {
             if (peer) peer.destroy();
             if (mqttClient) mqttClient.end();
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
         });
     })();
 </script>
