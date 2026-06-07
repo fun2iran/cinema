@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | نسخه نهایی</title>
+    <title>سینما کر | نسخه نهایی پایدار</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -17,7 +17,6 @@
             flex-direction: column;
             overflow: hidden;
         }
-        /* صفحه ورود */
         .login {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -50,14 +49,12 @@
             cursor: pointer;
             font-size: 16px;
         }
-        /* قسمت اصلی */
         #app {
             display: none;
             flex-direction: column;
             height: 100%;
             overflow: hidden;
         }
-        /* بخش بالایی ثابت */
         .top-fixed {
             flex-shrink: 0;
             background: #0b141a;
@@ -134,7 +131,6 @@
             border-radius: 20px;
             font-size: 12px;
         }
-        /* چت (بخش اسکرول‌شونده) */
         .chat {
             flex: 1;
             display: flex;
@@ -166,7 +162,6 @@
             background-color: #2a3942;
             border-bottom-right-radius: 5px;
         }
-        /* استایل ریپلای شبیه تلگرام */
         .reply-quote {
             font-size: 12px;
             background: rgba(0, 0, 0, 0.35);
@@ -260,7 +255,6 @@
 </div>
 
 <div id="app">
-    <!-- بخش ثابت بالا -->
     <div class="top-fixed">
         <video id="video" playsinline crossorigin="anonymous"></video>
         <div class="progress-bar">
@@ -284,7 +278,6 @@
         <div class="users-bar" id="usersList"></div>
     </div>
 
-    <!-- بخش چت (اسکرول‌شونده) -->
     <div class="chat">
         <div class="messages" id="messagesList"></div>
         <div class="input-area">
@@ -302,7 +295,7 @@
 
 <script>
     (function(){
-        // در صورت لزوم لینک ویدیو را تغییر دهید
+        // ====================== تنظیمات ======================
         const VIDEO_URL = "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
         
         // عناصر DOM
@@ -328,19 +321,20 @@
         const replyPreviewText = document.getElementById('replyPreviewText');
         const cancelReplyBtn = document.getElementById('cancelReplyBtn');
         
-        // متغیرها
+        // متغیرهای وضعیت
         let myName = '';
         let myPeerId = null;
-        let mqtt = null;
+        let mqttClient = null;
         let peer = null;
         let connections = new Map(); // peerId -> { conn, name }
-        let currentReply = null;    // { peerId, msgId, text, senderName }
+        let currentReply = null;
         let msgCounter = 1;
-        let historyMessages = [];    // ذخیره 20 پیام آخر
+        let historyMessages = [];
         const MAX_HISTORY = 20;
         let syncLock = false;
         let lastSyncTime = 0;
-        const displayedMsgSet = new Set(); // جلوگیری از دوبار نمایش
+        let displayedMsgSet = new Set();
+        let isPeerReady = false; // برای اطمینان از آماده بودن peer قبل از اتصال
         
         // ====================== توابع کمکی ======================
         function escapeHtml(str) {
@@ -393,7 +387,6 @@
             messagesList.appendChild(div);
             messagesList.scrollTop = messagesList.scrollHeight;
             
-            // رویداد ریپلای
             const btn = div.querySelector('.reply-btn');
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -452,9 +445,7 @@
                 replyPreviewBox.style.display = 'none';
             }
             const msgId = msgCounter++;
-            // نمایش برای خودمان
             addMessageToUI(myPeerId, msgId, text, myName, true, replyToId, replyText, replySenderName);
-            // ارسال به بقیه
             for (let [peerId, info] of connections) {
                 if (info.conn && info.conn.open) {
                     info.conn.send({
@@ -473,41 +464,7 @@
             msgInput.value = '';
         }
         
-        // ====================== راه‌اندازی Peer و MQTT ======================
-        function initPeer() {
-            const iceServers = [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-            ];
-            peer = new Peer(null, { debug: 0, config: { iceServers } });
-            peer.on('open', (id) => {
-                myPeerId = id;
-                statusText.innerText = `🆔 ${id.substring(0,6)}`;
-                mqtt = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-                mqtt.on('connect', () => {
-                    mqtt.subscribe('cinema_final_room');
-                    mqtt.publish('cinema_final_room', JSON.stringify({ peerId: myPeerId, name: myName }));
-                });
-                mqtt.on('message', (topic, msg) => {
-                    try {
-                        const data = JSON.parse(msg.toString());
-                        if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId)) {
-                            const conn = peer.connect(data.peerId, { reliable: true });
-                            setupConnection(conn);
-                        }
-                    } catch(e) {}
-                });
-                video.src = VIDEO_URL;
-                video.load();
-            });
-            peer.on('connection', (conn) => {
-                setupConnection(conn);
-            });
-            peer.on('error', (err) => console.error('Peer error:', err));
-        }
-        
+        // ====================== راه‌اندازی اتصال Peer ======================
         function setupConnection(conn) {
             if (connections.has(conn.peer)) return;
             conn.on('open', () => {
@@ -566,6 +523,52 @@
             });
         }
         
+        // مقداردهی اولیه Peer و MQTT
+        function initPeerAndMqtt() {
+            const iceServers = [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+            ];
+            peer = new Peer(null, { debug: 0, config: { iceServers } });
+            
+            peer.on('open', (id) => {
+                myPeerId = id;
+                isPeerReady = true;
+                statusText.innerText = `🆔 ${id.substring(0,6)}`;
+                
+                // اتصال به MQTT بعد از آماده شدن Peer
+                mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+                mqttClient.on('connect', () => {
+                    mqttClient.subscribe('cinema_final_room');
+                    mqttClient.publish('cinema_final_room', JSON.stringify({ peerId: myPeerId, name: myName }));
+                });
+                mqttClient.on('message', (topic, msg) => {
+                    try {
+                        const data = JSON.parse(msg.toString());
+                        if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId) && peer && isPeerReady) {
+                            const conn = peer.connect(data.peerId, { reliable: true });
+                            if (conn) setupConnection(conn);
+                        }
+                    } catch(e) {}
+                });
+                
+                // بارگذاری ویدیو
+                video.src = VIDEO_URL;
+                video.load();
+            });
+            
+            peer.on('connection', (conn) => {
+                setupConnection(conn);
+            });
+            
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                statusText.innerText = `⚠️ خطا: ${err.message}`;
+            });
+        }
+        
         // ====================== همگام‌سازی ویدیو ======================
         function broadcastSync(action, time) {
             if (syncLock) return;
@@ -599,7 +602,7 @@
             loginBox.style.display = 'none';
             app.style.display = 'flex';
             updateUsersUI();
-            initPeer();
+            initPeerAndMqtt();
         });
         
         playBtn.addEventListener('click', () => video.play());
@@ -616,7 +619,6 @@
             replyPreviewBox.style.display = 'none';
         });
         
-        // نوار پیشرفت
         video.addEventListener('timeupdate', () => {
             if (!video.seeking) {
                 seekBar.value = (video.currentTime / video.duration) * 100;
@@ -654,7 +656,7 @@
         
         window.addEventListener('beforeunload', () => {
             if (peer) peer.destroy();
-            if (mqtt) mqtt.end();
+            if (mqttClient) mqttClient.end();
         });
     })();
 </script>
