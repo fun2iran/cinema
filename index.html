@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | نسخه نهایی با ریپلای شبیه تلگرام</title>
+    <title>سینما کر | نسخه نهایی</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -60,6 +60,7 @@
         /* بخش بالایی ثابت */
         .top-fixed {
             flex-shrink: 0;
+            background: #0b141a;
         }
         video {
             width: 100%;
@@ -133,7 +134,7 @@
             border-radius: 20px;
             font-size: 12px;
         }
-        /* چت */
+        /* چت (بخش اسکرول‌شونده) */
         .chat {
             flex: 1;
             display: flex;
@@ -154,7 +155,6 @@
             border-radius: 18px;
             font-size: 13px;
             line-height: 1.4;
-            position: relative;
         }
         .msg-self {
             align-self: flex-end;
@@ -166,7 +166,7 @@
             background-color: #2a3942;
             border-bottom-right-radius: 5px;
         }
-        /* استایل ریپلای مانند تلگرام */
+        /* استایل ریپلای شبیه تلگرام */
         .reply-quote {
             font-size: 12px;
             background: rgba(0, 0, 0, 0.35);
@@ -211,6 +211,7 @@
             display: flex;
             flex-direction: column;
             gap: 6px;
+            flex-shrink: 0;
         }
         .reply-preview {
             background: #0b141a;
@@ -259,6 +260,7 @@
 </div>
 
 <div id="app">
+    <!-- بخش ثابت بالا -->
     <div class="top-fixed">
         <video id="video" playsinline crossorigin="anonymous"></video>
         <div class="progress-bar">
@@ -282,6 +284,7 @@
         <div class="users-bar" id="usersList"></div>
     </div>
 
+    <!-- بخش چت (اسکرول‌شونده) -->
     <div class="chat">
         <div class="messages" id="messagesList"></div>
         <div class="input-area">
@@ -299,7 +302,7 @@
 
 <script>
     (function(){
-        // لینک ویدیو (در صورت 403 می‌توانید عوض کنید)
+        // در صورت لزوم لینک ویدیو را تغییر دهید
         const VIDEO_URL = "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
         
         // عناصر DOM
@@ -333,11 +336,11 @@
         let connections = new Map(); // peerId -> { conn, name }
         let currentReply = null;    // { peerId, msgId, text, senderName }
         let msgCounter = 1;
-        let historyMessages = [];    // { id, senderId, senderName, text, replyToId, replyText, timestamp }
+        let historyMessages = [];    // ذخیره 20 پیام آخر
         const MAX_HISTORY = 20;
         let syncLock = false;
         let lastSyncTime = 0;
-        const displayedMsgSet = new Set(); // برای جلوگیری از دوبار نمایش
+        const displayedMsgSet = new Set(); // جلوگیری از دوبار نمایش
         
         // ====================== توابع کمکی ======================
         function escapeHtml(str) {
@@ -365,8 +368,7 @@
             usersList.innerHTML = html;
         }
         
-        // اضافه کردن پیام با جلوگیری از دوبار نمایش
-        function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName = '') {
+        function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName) {
             const key = `${senderId}:${msgId}`;
             if (displayedMsgSet.has(key)) return;
             displayedMsgSet.add(key);
@@ -376,7 +378,6 @@
             div.setAttribute('data-key', key);
             let content = '';
             if (replyToId && replyText) {
-                // ریپلای شبیه تلگرام
                 content += `<div class="reply-quote">
                                 <div class="reply-sender">${escapeHtml(replySenderName || senderName)}</div>
                                 <div class="reply-text">${escapeHtml(replyText.substring(0, 80))}</div>
@@ -407,7 +408,7 @@
                 msgInput.focus();
             });
             
-            // ذخیره در تاریخچه (برای همگام‌سازی با کاربران جدید)
+            // ذخیره در تاریخچه
             const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
             if (!existing) {
                 historyMessages.push({
@@ -451,9 +452,9 @@
                 replyPreviewBox.style.display = 'none';
             }
             const msgId = msgCounter++;
-            // نمایش در UI خودمان (با یکبار فراخوانی)
+            // نمایش برای خودمان
             addMessageToUI(myPeerId, msgId, text, myName, true, replyToId, replyText, replySenderName);
-            // ارسال به همه همتایان
+            // ارسال به بقیه
             for (let [peerId, info] of connections) {
                 if (info.conn && info.conn.open) {
                     info.conn.send({
