@@ -3,359 +3,477 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | نهایی اصلاح‌شده</title>
+    <title>سینما کر | نسخه نهایی با ریپلای شبیه تلگرام</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
-        html, body { height: 100%; margin: 0; padding: 0; }
-        :root {
-            --bg: #0b141a;
-            --panel: #1e2a32;
-            --accent: #00a884;
-            --text: #e9edef;
-            --input-bg: #2a3942;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
-            background: var(--bg);
-            color: var(--text);
+            background: #0b141a;
+            color: #e9edef;
             font-family: 'Segoe UI', Tahoma, sans-serif;
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            height: 100%;
             overflow: hidden;
-            font-size: 14px;
         }
-        #login-overlay {
+        /* صفحه ورود */
+        .login {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--bg);
+            background: #0b141a;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             z-index: 100;
-            padding: 20px;
-            gap: 12px;
+            gap: 15px;
         }
-        #login-overlay h2 { color: var(--accent); font-size: 20px; }
-        #login-overlay input {
-            padding: 10px 14px; border-radius: 25px; border: none;
-            background: var(--input-bg); color: var(--text); font-size: 15px;
-            width: 100%; max-width: 240px; text-align: center; outline: none;
+        .login h2 { color: #00a884; }
+        .login input {
+            padding: 10px 20px;
+            border-radius: 30px;
+            border: none;
+            background: #2a3942;
+            color: white;
+            width: 220px;
+            text-align: center;
+            font-size: 16px;
         }
-        #login-overlay button {
-            padding: 10px 24px; border-radius: 25px; border: none;
-            background: var(--accent); color: #fff; font-size: 15px; font-weight: bold; cursor: pointer;
+        .login button {
+            padding: 10px 30px;
+            border-radius: 30px;
+            border: none;
+            background: #00a884;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
         }
-        #main-app { display: none; flex-direction: column; height: 100%; width: 100%; overflow: hidden; }
-        .fixed-top { flex-shrink: 0; }
-        .player-container {
-            background: #000; width: 100%; display: flex; align-items: center; justify-content: center; max-height: 35vh;
+        /* قسمت اصلی */
+        #app {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
         }
-        video { width: 100%; height: auto; max-height: 35vh; display: block; }
-        .progress-row {
-            background: var(--panel); padding: 4px 8px; display: flex; align-items: center; gap: 6px;
+        /* بخش بالایی ثابت */
+        .top-fixed {
+            flex-shrink: 0;
+        }
+        video {
+            width: 100%;
+            max-height: 35vh;
+            background: black;
+            display: block;
+        }
+        .progress-bar {
+            background: #1e2a32;
+            padding: 6px 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .time {
+            font-size: 12px;
+            background: #0b141a;
+            padding: 2px 8px;
+            border-radius: 15px;
+        }
+        input[type=range] {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #2a3942;
+            border-radius: 5px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #00a884;
+            cursor: pointer;
+        }
+        .controls {
+            background: #1e2a32;
+            padding: 8px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
             border-bottom: 1px solid #2f3b44;
         }
-        .time-display {
-            font-size: 11px; font-family: monospace; background: #0b141a; padding: 2px 5px;
-            border-radius: 10px; min-width: 55px; text-align: center;
+        button, select, label {
+            background: #2a3942;
+            border: none;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 13px;
         }
-        .seek-slider {
-            flex: 1; height: 3px; -webkit-appearance: none; background: #2a3942; border-radius: 3px; outline: none;
+        button:active { background: #3b4a54; }
+        .accent { background: #00a884; }
+        .status {
+            font-size: 11px;
+            margin-right: auto;
+            color: #8696a0;
         }
-        .seek-slider::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
-            background: var(--accent); cursor: pointer;
-        }
-        .controls-row {
-            background: var(--panel); padding: 6px 8px; display: flex; flex-wrap: wrap; align-items: center;
-            gap: 4px; border-bottom: 1px solid #2f3b44;
-        }
-        .btn {
-            background: var(--input-bg); color: var(--text); border: none; border-radius: 25px; font-size: 13px;
-            cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-            min-width: 36px; height: 36px; padding: 0 12px; transition: 0.2s;
-        }
-        .btn:active { background: #3b4a54; }
-        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
-        .btn.icon { padding: 0; width: 36px; font-size: 18px; }
-        select.btn {
-            appearance: none;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
-            background-repeat: no-repeat; background-position: left 6px center; background-size: 12px;
-            padding-left: 22px; padding-right: 8px;
-        }
-        #status-tag {
-            font-size: 10px; color: #8696a0; margin-right: auto; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis; max-width: 100px;
-        }
-        .file-label {
-            background: var(--accent); color: #fff; border-radius: 25px; padding: 0 14px; height: 36px;
-            display: flex; align-items: center; font-size: 13px; font-weight: bold; cursor: pointer;
-        }
-        #file-uploader { display: none; }
         .users-bar {
-            background: var(--panel); padding: 2px 8px; font-size: 11px; display: flex; gap: 4px;
-            flex-wrap: wrap; border-bottom: 1px solid #2f3b44;
+            background: #1e2a32;
+            padding: 5px 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #2f3b44;
         }
         .user-chip {
-            background: #2a3942; padding: 2px 8px; border-radius: 12px; display: flex; align-items: center; gap: 3px;
+            background: #2a3942;
+            padding: 2px 12px;
+            border-radius: 20px;
+            font-size: 12px;
         }
-        .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+        /* چت */
+        .chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
         .messages {
-            flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 4px;
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
-        .chat-message {
-            padding: 6px 10px; border-radius: 16px; max-width: 85%; word-wrap: break-word;
-            font-size: 13px; line-height: 1.3; color: white; position: relative;
+        .msg {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 18px;
+            font-size: 13px;
+            line-height: 1.4;
+            position: relative;
         }
-        .msg-self { align-self: flex-end; background-color: var(--accent); border-bottom-left-radius: 6px; }
-        .msg-other { align-self: flex-start; background-color: #2a3942; border-bottom-right-radius: 6px; }
-        .reply-preview {
-            font-size: 11px; background: rgba(0,0,0,0.25); padding: 3px 8px; border-radius: 12px;
-            margin-bottom: 4px; display: flex; align-items: center; gap: 4px; border-right: 2px solid var(--accent);
+        .msg-self {
+            align-self: flex-end;
+            background-color: #00a884;
+            border-bottom-left-radius: 5px;
         }
-        .reply-preview span { opacity: 0.8; }
-        .msg-info {
-            font-size: 9px; opacity: 0.7; margin-top: 2px; display: flex; gap: 8px;
-            align-items: center; flex-wrap: wrap;
+        .msg-other {
+            align-self: flex-start;
+            background-color: #2a3942;
+            border-bottom-right-radius: 5px;
         }
-        .reply-badge {
-            background: rgba(255,255,255,0.15); border-radius: 12px; padding: 2px 8px; font-size: 10px;
-            cursor: pointer; transition: 0.2s;
+        /* استایل ریپلای مانند تلگرام */
+        .reply-quote {
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin-bottom: 6px;
+            border-right: 2px solid #00a884;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
-        .reply-badge:active { background: rgba(255,255,255,0.3); }
+        .reply-quote .reply-sender {
+            font-weight: bold;
+            font-size: 11px;
+            color: #a5f0c0;
+        }
+        .reply-quote .reply-text {
+            font-size: 11px;
+            opacity: 0.9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .msg-footer {
+            font-size: 9px;
+            opacity: 0.7;
+            margin-top: 4px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .reply-btn {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 0 6px;
+            cursor: pointer;
+            font-size: 10px;
+        }
         .input-area {
-            padding: 6px 8px; background: var(--panel); display: flex; gap: 6px; align-items: center;
-            flex-shrink: 0; flex-direction: column;
+            background: #1e2a32;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
-        .reply-input-preview {
-            width: 100%; background: #0b141a; border-radius: 20px; padding: 6px 12px; font-size: 12px;
-            display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px;
+        .reply-preview {
+            background: #0b141a;
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
         }
-        .reply-input-preview span {
-            flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.7;
+        .input-row {
+            display: flex;
+            gap: 8px;
         }
-        .cancel-reply { background: none; border: none; color: var(--accent); font-size: 16px; cursor: pointer; padding: 0 4px; }
-        .input-row { display: flex; gap: 6px; width: 100%; }
-        #msg-input {
-            flex: 1; padding: 10px 14px; border-radius: 25px; border: none; background: var(--input-bg);
-            color: var(--text); font-size: 14px; outline: none;
+        #msgInput {
+            flex: 1;
+            padding: 10px 15px;
+            border-radius: 25px;
+            border: none;
+            background: #2a3942;
+            color: white;
+            outline: none;
+            font-size: 14px;
         }
-        #send-btn {
-            background: var(--accent); border: none; border-radius: 25px; padding: 0 16px; height: 36px;
-            color: white; font-weight: bold; cursor: pointer;
+        #sendBtn {
+            background: #00a884;
+            padding: 0 20px;
         }
-        @media (max-width: 350px) {
-            .btn { min-width: 32px; height: 32px; font-size: 11px; padding: 0 6px; }
-            .file-label { padding: 0 10px; font-size: 12px; height: 32px; }
-            .time-display { font-size: 9px; min-width: 45px; }
-            #send-btn { padding: 0 12px; height: 32px; font-size: 12px; }
+        .cancel-reply {
+            background: none;
+            border: none;
+            color: #00a884;
+            cursor: pointer;
+        }
+        @media (max-width: 400px) {
+            button, select, label { padding: 4px 10px; font-size: 11px; }
+            .time { font-size: 10px; }
         }
     </style>
 </head>
 <body>
 
-<div id="login-overlay">
-    <h2>🎬 CinemaCore Pro</h2>
-    <input type="text" id="name-input" placeholder="نام شما" autocomplete="off" maxlength="20">
-    <button id="btn-login">ورود به گروه</button>
+<div id="loginBox" class="login">
+    <h2>🎬 سینما کر</h2>
+    <input type="text" id="userName" placeholder="نام شما" autocomplete="off">
+    <button id="enterBtn">ورود به گروه</button>
 </div>
 
-<div id="main-app">
-    <div class="fixed-top">
-        <div class="player-container">
-            <video id="player" playsinline crossorigin="anonymous"></video>
+<div id="app">
+    <div class="top-fixed">
+        <video id="video" playsinline crossorigin="anonymous"></video>
+        <div class="progress-bar">
+            <span class="time" id="currentTime">00:00</span>
+            <input type="range" id="seekBar" value="0" step="0.01">
+            <span class="time" id="duration">00:00</span>
+            <button id="fullscreenBtn">⤢</button>
         </div>
-        <div class="progress-row">
-            <span class="time-display" id="current-time">00:00</span>
-            <input type="range" id="seek-bar" class="seek-slider" value="0" step="0.01">
-            <span class="time-display" id="duration">00:00</span>
-            <button id="fullscreen-btn" class="btn icon" style="min-width:32px; width:32px;">⤢</button>
-        </div>
-        <div class="controls-row">
-            <button id="btn-play" class="btn icon">▶️</button>
-            <button id="btn-pause" class="btn icon">⏸️</button>
-            <select id="speed-select" class="btn">
+        <div class="controls">
+            <button id="playBtn">▶️</button>
+            <button id="pauseBtn">⏸️</button>
+            <select id="speedSelect">
                 <option value="0.5">0.5x</option><option value="0.75">0.75x</option>
                 <option value="1" selected>1x</option><option value="1.25">1.25x</option>
                 <option value="1.5">1.5x</option><option value="2">2x</option>
             </select>
-            <label class="file-label" for="file-uploader">📁</label>
-            <input type="file" id="file-uploader" accept="video/*">
-            <span id="status-tag">📡 در حال اتصال...</span>
+            <label for="fileUpload" style="background:#00a884;">📁</label>
+            <input type="file" id="fileUpload" accept="video/*" style="display:none">
+            <span class="status" id="statusText">📡 در حال اتصال...</span>
         </div>
-        <div class="users-bar" id="users-bar"></div>
+        <div class="users-bar" id="usersList"></div>
     </div>
 
-    <div class="chat-area">
-        <div id="messages" class="messages"></div>
-        <div class="input-area" id="input-area">
-            <div id="reply-preview" class="reply-input-preview" style="display: none;">
-                <span id="reply-preview-text">پاسخ به ...</span>
-                <button id="cancel-reply" class="cancel-reply">✖</button>
+    <div class="chat">
+        <div class="messages" id="messagesList"></div>
+        <div class="input-area">
+            <div id="replyPreviewBox" class="reply-preview" style="display: none;">
+                <span id="replyPreviewText"></span>
+                <button id="cancelReplyBtn" class="cancel-reply">✖</button>
             </div>
             <div class="input-row">
-                <input type="text" id="msg-input" placeholder="پیام..." autocomplete="off">
-                <button id="send-btn">ارسال</button>
+                <input type="text" id="msgInput" placeholder="پیام...">
+                <button id="sendBtn">ارسال</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-(function(){
-    const DEFAULT_VIDEO_URL = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4";
-    const MAX_PEERS = 8;
-    const HISTORY_SIZE = 50;
-    const PROGRESS_INTERVAL_MS = 100;
-
-    // ---------- عناصر DOM ----------
-    const loginOverlay = document.getElementById('login-overlay');
-    const nameInput = document.getElementById('name-input');
-    const btnLogin = document.getElementById('btn-login');
-    const mainApp = document.getElementById('main-app');
-    const player = document.getElementById('player');
-    const btnPlay = document.getElementById('btn-play');
-    const btnPause = document.getElementById('btn-pause');
-    const speedSelect = document.getElementById('speed-select');
-    const statusTag = document.getElementById('status-tag');
-    const usersBar = document.getElementById('users-bar');
-    const messagesDiv = document.getElementById('messages');
-    const msgInput = document.getElementById('msg-input');
-    const sendBtn = document.getElementById('send-btn');
-    const seekBar = document.getElementById('seek-bar');
-    const currentTimeSpan = document.getElementById('current-time');
-    const durationSpan = document.getElementById('duration');
-    const fullscreenBtn = document.getElementById('fullscreen-btn');
-    const fileUploader = document.getElementById('file-uploader');
-    const replyPreviewDiv = document.getElementById('reply-preview');
-    const replyPreviewText = document.getElementById('reply-preview-text');
-    const cancelReplyBtn = document.getElementById('cancel-reply');
-
-    let myName = '';
-    let myPeerId = null;
-    let mqttClient = null;
-    let peer = null;
-    let connectedPeers = new Map(); // peerId -> { conn, name, joinedAnnounced }
-    let myGlobalSeq = 0;
-    let messageHistory = [];
-    let videoSync = null;
-    let isSeeking = false;
-    let progressInterval = null;
-    let currentReply = null;
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);
-    }
-
-    function sanitizeName(name) {
-        let cleaned = name.trim().slice(0, 20).replace(/[<>]/g, '');
-        return cleaned || 'ناشناس';
-    }
-
-    function formatTime(seconds) {
-        if (isNaN(seconds)) return "00:00";
-        const hrs = Math.floor(seconds / 3600);
-        const mins = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-        if (hrs > 0) return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
-        return `${mins}:${secs.toString().padStart(2,'0')}`;
-    }
-
-    function stringToColor(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash |= 0;
+    (function(){
+        // لینک ویدیو (در صورت 403 می‌توانید عوض کنید)
+        const VIDEO_URL = "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+        
+        // عناصر DOM
+        const loginBox = document.getElementById('loginBox');
+        const userNameInput = document.getElementById('userName');
+        const enterBtn = document.getElementById('enterBtn');
+        const app = document.getElementById('app');
+        const video = document.getElementById('video');
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const speedSelect = document.getElementById('speedSelect');
+        const seekBar = document.getElementById('seekBar');
+        const currentTimeSpan = document.getElementById('currentTime');
+        const durationSpan = document.getElementById('duration');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const fileUpload = document.getElementById('fileUpload');
+        const statusText = document.getElementById('statusText');
+        const usersList = document.getElementById('usersList');
+        const messagesList = document.getElementById('messagesList');
+        const msgInput = document.getElementById('msgInput');
+        const sendMsgBtn = document.getElementById('sendBtn');
+        const replyPreviewBox = document.getElementById('replyPreviewBox');
+        const replyPreviewText = document.getElementById('replyPreviewText');
+        const cancelReplyBtn = document.getElementById('cancelReplyBtn');
+        
+        // متغیرها
+        let myName = '';
+        let myPeerId = null;
+        let mqtt = null;
+        let peer = null;
+        let connections = new Map(); // peerId -> { conn, name }
+        let currentReply = null;    // { peerId, msgId, text, senderName }
+        let msgCounter = 1;
+        let historyMessages = [];    // { id, senderId, senderName, text, replyToId, replyText, timestamp }
+        const MAX_HISTORY = 20;
+        let syncLock = false;
+        let lastSyncTime = 0;
+        const displayedMsgSet = new Set(); // برای جلوگیری از دوبار نمایش
+        
+        // ====================== توابع کمکی ======================
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
         }
-        return `hsl(${Math.abs(hash % 360)}, 70%, 65%)`;
-    }
-
-    function updateUsersBar() {
-        let html = `<span class="user-chip">👤 ${escapeHtml(myName)}</span>`;
-        for (let [id, info] of connectedPeers.entries()) {
-            html += `<span class="user-chip">👤 ${escapeHtml(info.name)}</span>`;
+        
+        function formatTime(sec) {
+            if (isNaN(sec)) return "00:00";
+            let mins = Math.floor(sec / 60);
+            let secs = Math.floor(sec % 60);
+            return `${mins}:${secs.toString().padStart(2,'0')}`;
         }
-        usersBar.innerHTML = html;
-    }
-
-    function displayMessage(peerId, seq, text, senderName, isSelf, replyToSeq = null, replyText = null, timestamp = null) {
-        const msgKey = `${peerId}:${seq}`;
-        if (document.querySelector(`.chat-message[data-msg-key="${msgKey}"]`)) return;
-
-        const div = document.createElement('div');
-        div.className = `chat-message ${isSelf ? 'msg-self' : 'msg-other'}`;
-        if (!isSelf && peerId) {
-            div.style.backgroundColor = stringToColor(peerId);
+        
+        function updateUsersUI() {
+            let html = `<div class="user-chip">👤 ${escapeHtml(myName)}</div>`;
+            for (let [id, info] of connections) {
+                html += `<div class="user-chip">👤 ${escapeHtml(info.name)}</div>`;
+            }
+            usersList.innerHTML = html;
         }
-        div.setAttribute('data-msg-key', msgKey);
-
-        let content = '';
-        if (replyToSeq && replyText) {
-            // برای نمایش ریپلای، نام فرستنده اصلی مهم نیست، می‌توانیم از senderName همان پیام استفاده کنیم
-            content += `<div class="reply-preview">
-                            <span>↪️ پاسخ به ${escapeHtml(senderName)}: </span>
-                            <span>${escapeHtml(replyText.substring(0, 60))}</span>
+        
+        // اضافه کردن پیام با جلوگیری از دوبار نمایش
+        function addMessageToUI(senderId, msgId, text, senderName, isSelf, replyToId, replyText, replySenderName = '') {
+            const key = `${senderId}:${msgId}`;
+            if (displayedMsgSet.has(key)) return;
+            displayedMsgSet.add(key);
+            
+            const div = document.createElement('div');
+            div.className = `msg ${isSelf ? 'msg-self' : 'msg-other'}`;
+            div.setAttribute('data-key', key);
+            let content = '';
+            if (replyToId && replyText) {
+                // ریپلای شبیه تلگرام
+                content += `<div class="reply-quote">
+                                <div class="reply-sender">${escapeHtml(replySenderName || senderName)}</div>
+                                <div class="reply-text">${escapeHtml(replyText.substring(0, 80))}</div>
+                            </div>`;
+            }
+            content += `<div>${escapeHtml(text)}</div>`;
+            content += `<div class="msg-footer">
+                            <span>#${msgId}</span>
+                            <span>${escapeHtml(senderName)} • ${new Date().toLocaleTimeString('fa-IR')}</span>
+                            <span class="reply-btn" data-peer="${senderId}" data-id="${msgId}" data-text="${escapeHtml(text)}" data-name="${escapeHtml(senderName)}">↩️ پاسخ</span>
                         </div>`;
-        }
-        content += `<div>${escapeHtml(text)}</div>`;
-        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString('fa-IR') : new Date().toLocaleTimeString('fa-IR');
-        content += `<div class="msg-info">
-                        <span>#${seq}</span>
-                        <span>${escapeHtml(senderName)} • ${timeStr}</span>
-                        <span class="reply-badge" data-peer="${peerId}" data-seq="${seq}" data-text="${escapeHtml(text)}">↩️ پاسخ</span>
-                    </div>`;
-        div.innerHTML = content;
-
-        div.querySelector('.reply-badge').addEventListener('click', (e) => {
-            e.stopPropagation();
-            currentReply = {
-                peerId: e.target.dataset.peer,
-                seq: parseInt(e.target.dataset.seq),
-                text: e.target.dataset.text
-            };
-            replyPreviewText.textContent = `پاسخ به "${currentReply.text.substring(0, 50)}..."`;
-            replyPreviewDiv.style.display = 'flex';
-            msgInput.focus();
-        });
-
-        let inserted = false;
-        const children = messagesDiv.children;
-        for (let i = 0; i < children.length; i++) {
-            const child = children[i];
-            const key = child.getAttribute('data-msg-key');
-            if (key) {
-                const existingSeq = parseInt(key.split(':')[1]);
-                if (existingSeq > seq) {
-                    messagesDiv.insertBefore(div, child);
-                    inserted = true;
-                    break;
-                }
+            div.innerHTML = content;
+            messagesList.appendChild(div);
+            messagesList.scrollTop = messagesList.scrollHeight;
+            
+            // رویداد ریپلای
+            const btn = div.querySelector('.reply-btn');
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                currentReply = {
+                    peerId: btn.dataset.peer,
+                    msgId: parseInt(btn.dataset.id),
+                    text: btn.dataset.text,
+                    senderName: btn.dataset.name
+                };
+                replyPreviewText.innerText = `پاسخ به ${currentReply.senderName}: "${currentReply.text.substring(0, 50)}..."`;
+                replyPreviewBox.style.display = 'flex';
+                msgInput.focus();
+            });
+            
+            // ذخیره در تاریخچه (برای همگام‌سازی با کاربران جدید)
+            const existing = historyMessages.find(m => m.id === msgId && m.senderId === senderId);
+            if (!existing) {
+                historyMessages.push({
+                    id: msgId,
+                    senderId: senderId,
+                    senderName: senderName,
+                    text: text,
+                    replyToId: replyToId,
+                    replyText: replyText,
+                    replySenderName: replySenderName,
+                    timestamp: Date.now()
+                });
+                if (historyMessages.length > MAX_HISTORY) historyMessages.shift();
             }
         }
-        if (!inserted) messagesDiv.appendChild(div);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-
-        messageHistory.push({ peerId, seq, text, sender: senderName, isSelf, replyToSeq, replyText, timestamp: timestamp || Date.now() });
-        if (messageHistory.length > HISTORY_SIZE) messageHistory.shift();
-    }
-
-    class ReliableNetwork {
-        constructor() {
-            this.callbacks = { onData: null, onStatus: null };
+        
+        function addSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'msg msg-other';
+            div.style.backgroundColor = '#555';
+            div.innerHTML = `<div>${escapeHtml(text)}</div><div class="msg-footer">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+            messagesList.appendChild(div);
+            messagesList.scrollTop = messagesList.scrollHeight;
         }
-
-        init() {
+        
+        function sendHistoryToPeer(conn) {
+            if (historyMessages.length === 0) return;
+            conn.send({ type: 'HISTORY', messages: historyMessages.slice() });
+        }
+        
+        // ====================== ارسال پیام ======================
+        function sendMessage() {
+            let text = msgInput.value.trim();
+            if (!text) return;
+            let replyToId = null, replyText = null, replySenderName = null;
+            if (currentReply) {
+                replyToId = currentReply.msgId;
+                replyText = currentReply.text;
+                replySenderName = currentReply.senderName;
+                currentReply = null;
+                replyPreviewBox.style.display = 'none';
+            }
+            const msgId = msgCounter++;
+            // نمایش در UI خودمان (با یکبار فراخوانی)
+            addMessageToUI(myPeerId, msgId, text, myName, true, replyToId, replyText, replySenderName);
+            // ارسال به همه همتایان
+            for (let [peerId, info] of connections) {
+                if (info.conn && info.conn.open) {
+                    info.conn.send({
+                        type: 'CHAT',
+                        msgId: msgId,
+                        text: text,
+                        sender: myName,
+                        senderId: myPeerId,
+                        replyToId: replyToId,
+                        replyText: replyText,
+                        replySenderName: replySenderName,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+            msgInput.value = '';
+        }
+        
+        // ====================== راه‌اندازی Peer و MQTT ======================
+        function initPeer() {
             const iceServers = [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
@@ -363,385 +481,181 @@
                 { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
             ];
             peer = new Peer(null, { debug: 0, config: { iceServers } });
-
             peer.on('open', (id) => {
                 myPeerId = id;
-                this._emitStatus('ready', id);
-            });
-
-            peer.on('connection', (conn) => this._setupConnection(conn));
-            peer.on('disconnected', () => {
-                this._emitStatus('disconnected');
-                peer.reconnect();
-            });
-            peer.on('error', (err) => {
-                console.error('Peer error:', err);
-                this._emitStatus('error', err.message);
-            });
-        }
-
-        // مدیریت اتصال (هم برای ورودی و هم خروجی)
-        _setupConnection(conn) {
-            const remoteId = conn.peer;
-            // حذف اتصال قبلی اگر وجود داشت
-            if (connectedPeers.has(remoteId)) {
-                const old = connectedPeers.get(remoteId);
-                try { old.conn.close(); } catch(e) {}
-                connectedPeers.delete(remoteId);
-            }
-
-            const peerInfo = {
-                conn: conn,
-                name: 'در حال دریافت...',
-                joinedAnnounced: false
-            };
-            connectedPeers.set(remoteId, peerInfo);
-
-            conn.on('open', () => {
-                // ارسال اطلاعات خود
-                conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
-                conn.send({ type: 'HISTORY', messages: messageHistory });
-                updateUsersBar();
-                // ما اینجا JOIN را اعلام نمی‌کنیم؛ صبر می‌کنیم تا HELLO از طرف مقابل برسد
-            });
-
-            conn.on('data', (data) => this._processIncoming(remoteId, data));
-
-            conn.on('close', () => {
-                const info = connectedPeers.get(remoteId);
-                if (info) {
-                    if (this.callbacks.onData) {
-                        this.callbacks.onData('system', { type: 'LEAVE', peerId: remoteId, name: info.name });
-                    }
-                    connectedPeers.delete(remoteId);
-                    updateUsersBar();
-                }
-            });
-
-            conn.on('error', (err) => console.warn('Connection error:', err));
-        }
-
-        _processIncoming(senderId, data) {
-            if (data.type === 'HELLO') {
-                const info = connectedPeers.get(senderId);
-                if (info) {
-                    info.name = sanitizeName(data.name);
-                    updateUsersBar();
-                    // فقط اگر قبلاً JOIN اعلام نشده باشد، اعلام کن
-                    if (!info.joinedAnnounced && this.callbacks.onData) {
-                        info.joinedAnnounced = true;
-                        this.callbacks.onData('system', { type: 'JOIN', peerId: senderId, name: info.name });
-                    }
-                }
-                // همچنین پیام HELLO می‌تواند برای همگام‌سازی اولیه مفید باشد
-                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            }
-            else if (data.type === 'HISTORY') {
-                if (Array.isArray(data.messages)) {
-                    for (let msg of data.messages) {
-                        displayMessage(msg.peerId, msg.seq, msg.text, msg.sender, msg.isSelf, msg.replyToSeq, msg.replyText, msg.timestamp);
-                    }
-                }
-            }
-            else if (data.type === 'CHAT') {
-                const isSelf = (data.senderId === myPeerId);
-                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, data.replyText, data.timestamp);
-                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            }
-            else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY') {
-                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            }
-        }
-
-        sendToAll(type, payload) {
-            for (let [peerId, info] of connectedPeers.entries()) {
-                const conn = info.conn;
-                if (!conn || !conn.open) continue;
-
-                if (type === 'CHAT') {
-                    const seq = ++myGlobalSeq;
-                    const message = {
-                        type: 'CHAT',
-                        seq: seq,
-                        text: payload.text,
-                        sender: myName,
-                        senderId: myPeerId,
-                        replyToSeq: payload.replyToSeq || null,
-                        replyText: payload.replyText || null,
-                        timestamp: Date.now()
-                    };
-                    conn.send(message);
-                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, payload.replyText, message.timestamp);
-                } else {
-                    conn.send({ type, ...payload });
-                }
-            }
-        }
-
-        connect(remoteId) {
-            if (remoteId === myPeerId || connectedPeers.has(remoteId)) return;
-            if (connectedPeers.size >= MAX_PEERS) {
-                this._emitStatus('error', 'حداکثر تعداد همتایان پر شده است');
-                return;
-            }
-            const conn = peer.connect(remoteId, { reliable: true });
-            this._setupConnection(conn); // مدیریت اتصال خروجی
-        }
-
-        onData(cb) { this.callbacks.onData = cb; }
-        onStatus(cb) { this.callbacks.onStatus = cb; }
-        _emitStatus(type, detail) { if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() }); }
-        destroy() { if (peer) peer.destroy(); }
-    }
-
-    class VideoSyncEngine {
-        constructor(player, network) {
-            this.player = player;
-            this.network = network;
-            this.syncLock = false;
-            this.bufferingPeers = new Set();
-            this.lastSyncTime = 0;
-            this.SYNC_THROTTLE = 250;
-            this._lastRemoteAction = 'pause';
-            this._bindEvents();
-        }
-
-        _bindEvents() {
-            this.player.addEventListener('play', () => this._onLocalPlay());
-            this.player.addEventListener('pause', () => this._onLocalPause());
-            this.player.addEventListener('waiting', () => this._onBufferingStart());
-            this.player.addEventListener('canplay', () => this._onBufferingEnd());
-            this.player.addEventListener('seeked', () => this._onLocalSeekThrottled());
-            this.player.addEventListener('ratechange', () => this._onLocalRateChange());
-        }
-
-        _onLocalPlay() { if (!this.syncLock) this._broadcast('play', this.player.currentTime); }
-        _onLocalPause() { if (!this.syncLock) this._broadcast('pause', this.player.currentTime); }
-        _onLocalSeekThrottled() {
-            if (this.syncLock) return;
-            const now = Date.now();
-            if (now - this.lastSyncTime < this.SYNC_THROTTLE) return;
-            this.lastSyncTime = now;
-            this._broadcast('seek', this.player.currentTime);
-        }
-        _onLocalRateChange() { if (!this.syncLock) this._broadcastSpeed(this.player.playbackRate); }
-        _onBufferingStart() { this._broadcastStatus('buffering', true); }
-        _onBufferingEnd() { this._broadcastStatus('buffering', false); }
-
-        _broadcast(action, time) {
-            for (let [peerId, info] of connectedPeers.entries()) {
-                if (info.conn && info.conn.open) {
-                    info.conn.send({ type: 'SYNC', action, time, senderTime: Date.now() });
-                }
-            }
-        }
-
-        _broadcastSpeed(rate) {
-            for (let [peerId, info] of connectedPeers.entries()) {
-                if (info.conn && info.conn.open) info.conn.send({ type: 'SPEED', rate });
-            }
-        }
-
-        _broadcastStatus(key, value) {
-            for (let [peerId, info] of connectedPeers.entries()) {
-                if (info.conn && info.conn.open) info.conn.send({ type: 'STATUS', key, value });
-            }
-        }
-
-        setPlaybackRate(rate) {
-            if (this.player.playbackRate !== rate) this.player.playbackRate = rate;
-            this._broadcastSpeed(rate);
-        }
-
-        handleIncoming(senderId, data) {
-            if (data.type === 'SYNC') this._applySync(data.action, data.time, data.senderTime);
-            else if (data.type === 'SPEED') this.player.playbackRate = data.rate;
-            else if (data.type === 'STATUS') this._applyStatus(senderId, data.key, data.value);
-        }
-
-        _applyStatus(senderId, key, value) {
-            if (key === 'buffering') {
-                if (value) this.bufferingPeers.add(senderId);
-                else this.bufferingPeers.delete(senderId);
-                this._checkBuffering();
-            }
-        }
-
-        _checkBuffering() {
-            if (this.bufferingPeers.size > 0 && !this.player.paused) {
-                this.player.pause();
-            } else if (this.bufferingPeers.size === 0 && this.player.paused && this._lastRemoteAction === 'play') {
-                this.player.play().catch(()=>{});
-            }
-        }
-
-        _applySync(action, time, senderTime) {
-            if (this.syncLock) return;
-            this.syncLock = true;
-            let compensated = time;
-            if (senderTime) {
-                const now = Date.now();
-                const elapsed = (now - senderTime) / 1000;
-                compensated = time + elapsed;
-            }
-            const currentDiff = Math.abs(this.player.currentTime - compensated);
-            if (currentDiff > 0.3 && !isNaN(compensated)) {
-                this.player.currentTime = compensated;
-            }
-            if (action === 'play' || action === 'seek') {
-                this.player.play().catch(()=>{});
-            } else if (action === 'pause') {
-                this.player.pause();
-            }
-            this._lastRemoteAction = action;
-            setTimeout(() => { this.syncLock = false; }, 300);
-        }
-
-        destroy() {}
-    }
-
-    const network = new ReliableNetwork();
-
-    function sendChatMessage() {
-        let text = msgInput.value.trim();
-        if (!text) return;
-        let replyToSeq = null;
-        let replyText = null;
-        if (currentReply) {
-            replyToSeq = currentReply.seq;
-            replyText = currentReply.text;
-            currentReply = null;
-            replyPreviewDiv.style.display = 'none';
-        }
-        network.sendToAll('CHAT', { text, replyToSeq, replyText });
-        msgInput.value = '';
-    }
-
-    function cancelReply() {
-        currentReply = null;
-        replyPreviewDiv.style.display = 'none';
-    }
-
-    btnLogin.addEventListener('click', () => {
-        let rawName = nameInput.value.trim();
-        if (!rawName) return alert('لطفاً نام خود را وارد کنید');
-        myName = sanitizeName(rawName);
-        loginOverlay.style.display = 'none';
-        mainApp.style.display = 'flex';
-        updateUsersBar();
-
-        network.init();
-        network.onStatus((status) => {
-            if (status.type === 'ready') {
-                statusTag.textContent = `🆔 ${status.detail.substring(0,6)}`;
-                mqttClient = mqtt.connect('wss://test.mosquitto.org:8081/mqtt');
-                mqttClient.on('connect', () => {
-                    mqttClient.subscribe('cinema_mesh_room_pro_v2');
-                    mqttClient.publish('cinema_mesh_room_pro_v2', JSON.stringify({ peerId: myPeerId, name: myName }));
+                statusText.innerText = `🆔 ${id.substring(0,6)}`;
+                mqtt = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+                mqtt.on('connect', () => {
+                    mqtt.subscribe('cinema_final_room');
+                    mqtt.publish('cinema_final_room', JSON.stringify({ peerId: myPeerId, name: myName }));
                 });
-                mqttClient.on('message', (topic, message) => {
+                mqtt.on('message', (topic, msg) => {
                     try {
-                        const data = JSON.parse(message.toString());
-                        if (data.peerId && data.peerId !== myPeerId && !connectedPeers.has(data.peerId)) {
-                            network.connect(data.peerId);
+                        const data = JSON.parse(msg.toString());
+                        if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId)) {
+                            const conn = peer.connect(data.peerId, { reliable: true });
+                            setupConnection(conn);
                         }
                     } catch(e) {}
                 });
-                if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
-                player.src = DEFAULT_VIDEO_URL;
-                player.load();
-            } else if (status.type === 'error') {
-                statusTag.textContent = `⚠️ خطا: ${status.detail}`;
-            }
-        });
-
-        player.addEventListener('error', () => {
-            if (player.error) {
-                alert('ویدئوی پیش‌فرض بارگذاری نشد. می‌توانید از دکمه 📁 یک ویدئوی محلی انتخاب کنید.');
-            }
-        });
-
-        network.onData((senderId, data) => {
-            if (data.type === 'JOIN') {
-                const peerName = data.name || connectedPeers.get(data.peerId)?.name || 'کاربر جدید';
-                const div = document.createElement('div');
-                div.className = 'chat-message msg-other';
-                div.style.backgroundColor = '#555';
-                div.innerHTML = `<div>✨ کاربر ${escapeHtml(peerName)} وارد شد</div><div class="msg-info">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-                messagesDiv.appendChild(div);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            } else if (data.type === 'LEAVE') {
-                const div = document.createElement('div');
-                div.className = 'chat-message msg-other';
-                div.style.backgroundColor = '#555';
-                div.innerHTML = `<div>🚪 کاربر ${escapeHtml(data.name || 'ناشناس')} خارج شد</div><div class="msg-info">سیستم • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-                messagesDiv.appendChild(div);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            } else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED') {
-                if (videoSync) videoSync.handleIncoming(senderId, data);
-            } else if (data.type === 'NOTIFY') {
-                const div = document.createElement('div');
-                div.className = 'chat-message msg-other';
-                div.style.backgroundColor = '#555';
-                div.innerHTML = `<div>${escapeHtml(data.text)}</div><div class="msg-info">اطلاع • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-                messagesDiv.appendChild(div);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-        });
-
-        videoSync = new VideoSyncEngine(player, network);
-    });
-
-    sendBtn.addEventListener('click', sendChatMessage);
-    msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
-    cancelReplyBtn.addEventListener('click', cancelReply);
-    btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
-    btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
-    speedSelect.addEventListener('change', () => { if(videoSync) videoSync.setPlaybackRate(parseFloat(speedSelect.value)); });
-
-    seekBar.addEventListener('input', function() {
-        if (!player.duration) return;
-        isSeeking = true;
-        player.currentTime = (seekBar.value / 100) * player.duration;
-    });
-    seekBar.addEventListener('change', () => { isSeeking = false; });
-
-    function updateProgress() {
-        if (!isSeeking && player.duration && !isNaN(player.duration)) {
-            seekBar.value = (player.currentTime / player.duration) * 100;
-            currentTimeSpan.textContent = formatTime(player.currentTime);
-            durationSpan.textContent = formatTime(player.duration);
+                video.src = VIDEO_URL;
+                video.load();
+            });
+            peer.on('connection', (conn) => {
+                setupConnection(conn);
+            });
+            peer.on('error', (err) => console.error('Peer error:', err));
         }
-    }
-    player.addEventListener('loadedmetadata', () => {
-        durationSpan.textContent = formatTime(player.duration);
-        seekBar.max = 100;
-    });
-    progressInterval = setInterval(updateProgress, PROGRESS_INTERVAL_MS);
-
-    fullscreenBtn.addEventListener('click', () => {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-        else document.exitFullscreen();
-    });
-
-    fileUploader.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
-            const url = URL.createObjectURL(file);
-            player._blobUrl = url;
-            player.src = url;
-            player.load();
-            network.sendToAll('NOTIFY', { text: `${myName} یک ویدیوی محلی بارگذاری کرد (فقط برای خودش قابل مشاهده)` });
+        
+        function setupConnection(conn) {
+            if (connections.has(conn.peer)) return;
+            conn.on('open', () => {
+                connections.set(conn.peer, { conn: conn, name: 'در حال دریافت...' });
+                updateUsersUI();
+                conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
+                addSystemMessage(`✨ کاربر ${myName} وارد شد`);
+                sendHistoryToPeer(conn);
+            });
+            conn.on('data', (data) => {
+                if (data.type === 'HELLO') {
+                    const info = connections.get(conn.peer);
+                    if (info) {
+                        info.name = data.name;
+                        updateUsersUI();
+                        addSystemMessage(`✨ کاربر ${data.name} وارد شد`);
+                    }
+                }
+                else if (data.type === 'HISTORY') {
+                    for (let msg of data.messages) {
+                        const key = `${msg.senderId}:${msg.id}`;
+                        if (!displayedMsgSet.has(key)) {
+                            const isSelf = (msg.senderId === myPeerId);
+                            addMessageToUI(msg.senderId, msg.id, msg.text, msg.senderName, isSelf, msg.replyToId, msg.replyText, msg.replySenderName);
+                        }
+                    }
+                }
+                else if (data.type === 'CHAT') {
+                    const isSelf = (data.senderId === myPeerId);
+                    addMessageToUI(data.senderId, data.msgId, data.text, data.sender, isSelf, data.replyToId, data.replyText, data.replySenderName);
+                }
+                else if (data.type === 'SYNC') {
+                    if (syncLock) return;
+                    syncLock = true;
+                    let time = data.time;
+                    if (Math.abs(video.currentTime - time) > 0.5) video.currentTime = time;
+                    if (data.action === 'play') video.play();
+                    else if (data.action === 'pause') video.pause();
+                    setTimeout(() => { syncLock = false; }, 300);
+                }
+                else if (data.type === 'SPEED') {
+                    video.playbackRate = data.rate;
+                    speedSelect.value = data.rate;
+                }
+                else if (data.type === 'NOTIFY') {
+                    addSystemMessage(data.text);
+                }
+            });
+            conn.on('close', () => {
+                const info = connections.get(conn.peer);
+                if (info) {
+                    addSystemMessage(`🚪 کاربر ${info.name} خارج شد`);
+                    connections.delete(conn.peer);
+                    updateUsersUI();
+                }
+            });
         }
-    });
-
-    window.addEventListener('beforeunload', () => {
-        if (progressInterval) clearInterval(progressInterval);
-        if (network) network.destroy();
-        if (mqttClient) mqttClient.end();
-    });
-})();
+        
+        // ====================== همگام‌سازی ویدیو ======================
+        function broadcastSync(action, time) {
+            if (syncLock) return;
+            const now = Date.now();
+            if (action === 'seek' && now - lastSyncTime < 200) return;
+            lastSyncTime = now;
+            for (let [peerId, info] of connections) {
+                if (info.conn && info.conn.open) {
+                    info.conn.send({ type: 'SYNC', action, time });
+                }
+            }
+        }
+        function broadcastSpeed(rate) {
+            for (let [peerId, info] of connections) {
+                if (info.conn && info.conn.open) {
+                    info.conn.send({ type: 'SPEED', rate });
+                }
+            }
+        }
+        
+        video.addEventListener('play', () => broadcastSync('play', video.currentTime));
+        video.addEventListener('pause', () => broadcastSync('pause', video.currentTime));
+        video.addEventListener('seeked', () => broadcastSync('seek', video.currentTime));
+        video.addEventListener('ratechange', () => broadcastSpeed(video.playbackRate));
+        
+        // ====================== رویدادهای UI ======================
+        enterBtn.addEventListener('click', () => {
+            let name = userNameInput.value.trim();
+            if (!name) return alert('لطفاً نام خود را وارد کنید');
+            myName = escapeHtml(name);
+            loginBox.style.display = 'none';
+            app.style.display = 'flex';
+            updateUsersUI();
+            initPeer();
+        });
+        
+        playBtn.addEventListener('click', () => video.play());
+        pauseBtn.addEventListener('click', () => video.pause());
+        speedSelect.addEventListener('change', () => {
+            let rate = parseFloat(speedSelect.value);
+            video.playbackRate = rate;
+            broadcastSpeed(rate);
+        });
+        sendMsgBtn.addEventListener('click', sendMessage);
+        msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+        cancelReplyBtn.addEventListener('click', () => {
+            currentReply = null;
+            replyPreviewBox.style.display = 'none';
+        });
+        
+        // نوار پیشرفت
+        video.addEventListener('timeupdate', () => {
+            if (!video.seeking) {
+                seekBar.value = (video.currentTime / video.duration) * 100;
+                currentTimeSpan.innerText = formatTime(video.currentTime);
+            }
+        });
+        video.addEventListener('loadedmetadata', () => {
+            durationSpan.innerText = formatTime(video.duration);
+            seekBar.max = 100;
+        });
+        seekBar.addEventListener('input', () => {
+            if (video.duration) {
+                video.currentTime = (seekBar.value / 100) * video.duration;
+            }
+        });
+        
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
+        });
+        
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                video.src = url;
+                video.load();
+                for (let [peerId, info] of connections) {
+                    if (info.conn && info.conn.open) {
+                        info.conn.send({ type: 'NOTIFY', text: `${myName} یک ویدیوی محلی بارگذاری کرد (فقط برای خودش قابل مشاهده)` });
+                    }
+                }
+            }
+        });
+        
+        window.addEventListener('beforeunload', () => {
+            if (peer) peer.destroy();
+            if (mqtt) mqtt.end();
+        });
+    })();
 </script>
 </body>
 </html>
