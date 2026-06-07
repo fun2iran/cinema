@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | ویدیو ثابت + پیام مطمئن</title>
+    <title>CinemaCore Pro | نسخه پایدار با پیام‌های دیگران</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -315,7 +315,6 @@
     const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
     const MAX_PEERS = 8;
     const CACHE_SIZE = 100;
-    const REQ_TIMEOUT = 3000;
 
     const loginOverlay = document.getElementById('login-overlay');
     const nameInput = document.getElementById('name-input');
@@ -339,7 +338,7 @@
     let myName = '';
     let myPeerId = null;
     let mqttClient = null;
-    let connectedPeers = new Map();
+    let connectedPeers = new Map(); // peerId -> { conn, name, outSeq, expectedSeq, pendingBuffer }
     let videoSync = null;
     let isSeeking = false;
     let rafId = null;
@@ -439,11 +438,12 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
+    // شبکه قابل اعتماد با رفع مشکل نمایش پیام دیگران
     class ReliablePeerNetwork {
         constructor() {
             this.peer = null;
             this.callbacks = { onData: null, onStatus: null };
-            this.sentCache = new Map();
+            this.sentCache = new Map(); // peerId -> [{seq, message}]
         }
 
         init() {
@@ -469,9 +469,7 @@
                     name: 'در حال دریافت...',
                     outSeq: 1,
                     expectedSeq: 1,
-                    pendingBuffer: new Map(),
-                    reqTimer: null,
-                    lastReqTime: 0
+                    pendingBuffer: new Map()
                 };
                 connectedPeers.set(peerId, peerData);
                 conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
@@ -513,16 +511,34 @@
 
         _handleChat(senderId, msg) {
             const peerInfo = connectedPeers.get(senderId);
-            if (!peerInfo) return;
+            if (!peerInfo) {
+                // اگر هنوز اطلاعات همتا ثبت نشده (خیلی کم پیش می‌آید) آن را ایجاد می‌کنیم
+                const tempConn = this.peer.connections.get(senderId)?.[0];
+                if (tempConn) {
+                    this._handleConnection(tempConn);
+                    setTimeout(() => this._handleChat(senderId, msg), 100);
+                }
+                return;
+            }
             const expected = peerInfo.expectedSeq;
             const receivedSeq = msg.seq;
+
+            // تحویل فوری پیام (برای جلوگیری از گیر کردن)
+            this._deliverMessage(senderId, msg);
+
+            // مدیریت شماره ترتیبی و بافر (برای درخواست مجدد در صورت لزوم)
             if (receivedSeq === expected) {
-                this._deliverMessage(senderId, msg);
                 peerInfo.expectedSeq++;
                 this._flushPendingBuffer(peerInfo, senderId);
             } else if (receivedSeq > expected) {
                 peerInfo.pendingBuffer.set(receivedSeq, msg);
-                this._requestMissing(peerInfo, senderId, expected, receivedSeq - 1);
+                // درخواست مجدد پیام‌های گم شده (اختیاری)
+                if (peerInfo.reqTimer) clearTimeout(peerInfo.reqTimer);
+                peerInfo.reqTimer = setTimeout(() => {
+                    if (peerInfo.conn && peerInfo.conn.open) {
+                        peerInfo.conn.send({ type: 'REQ', fromSeq: expected, toSeq: receivedSeq - 1 });
+                    }
+                }, 500);
             }
         }
 
@@ -535,19 +551,6 @@
                 next++;
                 peerInfo.expectedSeq++;
             }
-        }
-
-        _requestMissing(peerInfo, peerId, fromSeq, toSeq) {
-            const now = Date.now();
-            if (peerInfo.lastReqTime && (now - peerInfo.lastReqTime) < REQ_TIMEOUT) return;
-            peerInfo.lastReqTime = now;
-            if (peerInfo.reqTimer) clearTimeout(peerInfo.reqTimer);
-            peerInfo.reqTimer = setTimeout(() => {
-                const conn = peerInfo.conn;
-                if (conn && conn.open) {
-                    conn.send({ type: 'REQ', fromSeq, toSeq });
-                }
-            }, 200);
         }
 
         _deliverMessage(senderId, msg) {
@@ -599,6 +602,7 @@
                     const cache = this.sentCache.get(peerId);
                     cache.push({ seq, message });
                     while (cache.length > CACHE_SIZE) cache.shift();
+                    // نمایش پیام خودمان
                     displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, null);
                 } else {
                     conn.send({ type, ...payload });
@@ -627,9 +631,6 @@
             this.network = network;
             this.syncLock = false;
             this.bufferingPeers = new Set();
-            this.clockOffset = new Map();
-            this.latencySamples = new Map();
-            this.maxLatencySamples = 8;
             this.lastSyncTime = 0;
             this.SYNC_THROTTLE = 200;
             this._lastRemoteAction = 'pause';
