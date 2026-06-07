@@ -1,501 +1,573 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
-    <title>CinemaCore Pro | پخش همگام فیلم + چت P2P</title>
-    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            --bg: #0b141a;
-            --panel: #202c33;
-            --accent: #00a884;
-            --text: #e9edef;
-            --input-bg: #2a3942;
-            --shadow: 0 2px 10px rgba(0,0,0,0.5);
-        }
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            height: 100dvh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            -webkit-tap-highlight-color: transparent;
-        }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+    <title>CinemaCore Pro | پخش همگام فیلم + چت گروهی</title>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0b141a; --panel: #202c33; --accent: #00a884;
+            --text: #e9edef; --input-bg: #2a3942;
+        }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            height: 100dvh; display: flex; flex-direction: column;
+            overflow: hidden; -webkit-tap-highlight-color: transparent;
+        }
 
-        /* ویدیو پلیر */
-        .player-container {
-            position: relative;
-            width: 100%;
-            background: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            max-height: 45vh;
-            flex-shrink: 0;
-        }
-        video {
-            width: 100%;
-            height: auto;
-            max-height: 45vh;
-            display: block;
-        }
+        /* لایه ورود */
+        #login-overlay {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            background: var(--bg); display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100; padding: 20px; gap: 15px;
+        }
+        #login-overlay input {
+            padding: 12px 16px; border-radius: 25px; border: none;
+            background: var(--input-bg); color: var(--text); font-size: 16px;
+            width: 100%; max-width: 280px; text-align: center; outline: none;
+        }
+        #login-overlay button {
+            padding: 12px 30px; border-radius: 25px; border: none;
+            background: var(--accent); color: #fff; font-size: 16px; font-weight: bold;
+            cursor: pointer;
+        }
 
-        /* کنترل‌ها */
-        .controls {
-            background: var(--panel);
-            padding: 12px 10px;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 8px;
-            border-bottom: 1px solid #2a3942;
-            flex-shrink: 0;
-        }
-        .btn {
-            background: var(--input-bg);
-            color: var(--text);
-            border: none;
-            padding: 10px 14px;
-            border-radius: 25px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 50px;
-            transition: 0.2s;
-            flex-shrink: 0;
-            white-space: nowrap;
-        }
-        .btn:active { background: #3b4a54; }
-        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
+        /* ویدیو پلیر */
+        .player-container {
+            position: relative; width: 100%; background: #000;
+            display: flex; align-items: center; justify-content: center;
+            max-height: 40vh; flex-shrink: 0;
+        }
+        video {
+            width: 100%; height: auto; max-height: 40vh; display: block;
+        }
 
-        select.btn {
-            appearance: none;
-            -webkit-appearance: none;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
-            background-repeat: no-repeat;
-            background-position: left 8px center;
-            background-size: 16px;
-            padding-left: 28px;
-            padding-right: 14px;
-        }
+        /* کنترل‌ها */
+        .controls {
+            background: var(--panel); padding: 10px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            border-bottom: 1px solid var(--input-bg); flex-shrink: 0;
+        }
+        .btn {
+            background: var(--input-bg); color: var(--text); border: none;
+            padding: 8px 12px; border-radius: 20px; font-size: 13px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            min-width: 44px; transition: 0.2s; white-space: nowrap;
+        }
+        .btn:active { background: #3b4a54; }
+        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
+        select.btn {
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
+            background-repeat: no-repeat; background-position: left 8px center;
+            background-size: 14px; padding-left: 24px; padding-right: 12px;
+        }
+        #status-tag {
+            font-size: 12px; margin-right: auto; color: #8696a0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
+        }
 
-        #status-tag {
-            font-size: 12px;
-            margin-right: auto;
-            color: #8696a0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 120px;
-        }
+        /* نوار کاربران */
+        .users-bar {
+            background: var(--panel); padding: 4px 10px; font-size: 12px;
+            display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
+        }
+        .user-chip {
+            background: var(--input-bg); padding: 4px 10px; border-radius: 15px;
+            display: flex; align-items: center; gap: 5px;
+        }
 
-        /* بخش چت */
-        .chat-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: var(--bg);
-        }
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .chat-message {
-            padding: 8px 12px;
-            border-radius: 18px;
-            max-width: 85%;
-            word-wrap: break-word;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        .msg-sent {
-            align-self: flex-end;
-            background: var(--accent);
-            color: #fff;
-            border-bottom-left-radius: 4px;
-        }
-        .msg-received {
-            align-self: flex-start;
-            background: var(--panel);
-            color: var(--text);
-            border-bottom-right-radius: 4px;
-        }
-        .msg-info {
-            font-size: 10px;
-            opacity: 0.7;
-            margin-top: 2px;
-        }
-        .input-area {
-            padding: 8px 10px;
-            background: var(--panel);
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-shrink: 0;
-        }
-        #msg-input {
-            flex: 1;
-            padding: 10px 15px;
-            border-radius: 25px;
-            border: none;
-            background: var(--input-bg);
-            color: var(--text);
-            font-size: 14px;
-            outline: none;
-        }
-        #msg-input::placeholder { color: #8696a0; }
-
-        /* نوار اتصال */
-        .connection-bar {
-            background: var(--panel);
-            padding: 6px 10px;
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            font-size: 13px;
-            flex-shrink: 0;
-            flex-wrap: wrap;
-        }
-        .connection-bar input {
-            flex: 1;
-            padding: 8px 12px;
-            border-radius: 20px;
-            border: none;
-            background: var(--input-bg);
-            color: var(--text);
-            font-size: 13px;
-            min-width: 100px;
-            outline: none;
-        }
-        .connection-bar .btn { padding: 6px 12px; font-size: 13px; }
-
-        /* مخفی کردن فایل آپلودر واقعی */
-        #file-uploader { display: none; }
-
-        /* تطبیق برای موبایل */
-        @media (max-width: 400px) {
-            .btn { padding: 8px 10px; font-size: 13px; }
-        }
-    </style>
+        /* چت */
+        .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .messages {
+            flex: 1; overflow-y: auto; padding: 10px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .chat-message {
+            padding: 8px 12px; border-radius: 18px; max-width: 85%;
+            word-wrap: break-word; font-size: 14px; line-height: 1.4;
+        }
+        .msg-sent {
+            align-self: flex-end; background: var(--accent); color: #fff;
+            border-bottom-left-radius: 4px;
+        }
+        .msg-received {
+            align-self: flex-start; background: var(--panel); color: var(--text);
+            border-bottom-right-radius: 4px;
+        }
+        .msg-info { font-size: 10px; opacity: 0.7; margin-top: 2px; }
+        .input-area {
+            padding: 8px 10px; background: var(--panel); display: flex;
+            gap: 8px; align-items: center; flex-shrink: 0;
+        }
+        #msg-input {
+            flex: 1; padding: 10px 15px; border-radius: 25px; border: none;
+            background: var(--input-bg); color: var(--text); font-size: 14px; outline: none;
+        }
+        #file-uploader { display: none; }
+        @media (max-width: 400px) { .btn { padding: 6px 10px; font-size: 12px; } }
+    </style>
 </head>
 <body>
 
-<!-- پلیر ویدیو -->
-<div class="player-container">
-    <video id="player" playsinline></video>
+<!-- صفحه ورود -->
+<div id="login-overlay">
+    <h2 style="color:var(--accent);">🎬 CinemaCore Pro</h2>
+    <input type="text" id="name-input" placeholder="نام خود را وارد کنید" autocomplete="off">
+    <button id="btn-login">ورود به گروه</button>
 </div>
 
-<!-- کنترل‌های ویدیو -->
-<div class="controls">
-    <label class="btn accent" for="file-uploader">📁 انتخاب فیلم</label>
-    <input type="file" id="file-uploader" accept="video/*">
+<!-- محتوای اصلی (مخفی تا زمان ورود) -->
+<div id="main-app" style="display:none; flex-direction:column; height:100%;">
+    <div class="player-container">
+        <video id="player" playsinline></video>
+    </div>
 
-    <button id="btn-play" class="btn">▶ پخش</button>
-    <button id="btn-pause" class="btn">⏸ مکث</button>
+    <div class="controls">
+        <label class="btn accent" for="file-uploader">📁 انتخاب فیلم</label>
+        <input type="file" id="file-uploader" accept="video/*">
+        <button id="btn-play" class="btn">▶ پخش</button>
+        <button id="btn-pause" class="btn">⏸ مکث</button>
+        <select id="speed-select" class="btn">
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+        </select>
+        <span id="status-tag">📡 در حال اتصال...</span>
+    </div>
 
-    <select id="speed-select" class="btn">
-        <option value="0.5">0.5x</option>
-        <option value="0.75">0.75x</option>
-        <option value="1" selected>1x</option>
-        <option value="1.25">1.25x</option>
-        <option value="1.5">1.5x</option>
-        <option value="2">2x</option>
-    </select>
+    <div class="users-bar" id="users-bar"></div>
 
-    <span id="status-tag">📡 در حال دریافت شناسه...</span>
-</div>
-
-<!-- نوار اتصال P2P -->
-<div class="connection-bar">
-    <span style="white-space:nowrap;">شناسه من:</span>
-    <strong id="my-peer-id" style="background:var(--input-bg);padding:4px 10px;border-radius:12px;font-size:12px;">---</strong>
-    <input type="text" id="remote-id" placeholder="شناسه طرف مقابل">
-    <button id="btn-connect" class="btn accent">اتصال</button>
-    <button id="btn-copy" class="btn">📋</button>
-</div>
-
-<!-- چت -->
-<div class="chat-area">
-    <div id="messages" class="messages"></div>
-    <div class="input-area">
-        <input type="text" id="msg-input" placeholder="پیام خود را بنویسید..." autocomplete="off">
-    </div>
+    <div class="chat-area">
+        <div id="messages" class="messages"></div>
+        <div class="input-area">
+            <input type="text" id="msg-input" placeholder="پیام خود را بنویسید..." autocomplete="off">
+        </div>
+    </div>
 </div>
 
 <script>
-    (function() {
-        // ---------- DOM Elements ----------
-        const player = document.getElementById('player');
-        const fileUploader = document.getElementById('file-uploader');
-        const btnPlay = document.getElementById('btn-play');
-        const btnPause = document.getElementById('btn-pause');
-        const speedSelect = document.getElementById('speed-select');
-        const statusTag = document.getElementById('status-tag');
-        const myPeerIdSpan = document.getElementById('my-peer-id');
-        const remoteIdInput = document.getElementById('remote-id');
-        const btnConnect = document.getElementById('btn-connect');
-        const btnCopy = document.getElementById('btn-copy');
-        const messagesDiv = document.getElementById('messages');
-        const msgInput = document.getElementById('msg-input');
+/**
+ * ============== 1. Enterprise Network Engine (ACK, Queue, Retry) ==============
+ */
+class EnterpriseNetworkEngine {
+    constructor() {
+        this.peer = null;
+        this.connections = new Map();
+        this.outgoingQueues = new Map();
+        this.processedIds = new Set();
+        this.heartbeatInterval = 5000;
+        this.maxRetries = 5;
+        this.retryDelay = 1500;
+        this.callbacks = {
+            onData: null,
+            onStatus: null,
+            onPeerConnected: null,
+            onPeerDisconnected: null
+        };
+    }
 
-        // ---------- State ----------
-        let peer = null;
-        let conn = null;                // فعال اتصال با طرف مقابل
-        let isSyncing = false;          // جلوگیری از حلقه‌های بی‌نهایت هنگام همگام‌سازی
-        let myPeerId = '';
+    init() {
+        this.peer = new Peer(null, {
+            debug: 0,
+            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+        });
+        this.peer.on('open', (id) => {
+            this.myId = id;
+            this._emitStatus('ready', id);
+        });
+        this.peer.on('connection', (conn) => this._handleConnection(conn));
+        this.peer.on('disconnected', () => {
+            this._emitStatus('disconnected');
+            this.peer.reconnect();
+        });
+        this.peer.on('error', (err) => {
+            console.error('Peer error:', err);
+            this._emitStatus('error', err.message);
+        });
+    }
 
-        // ---------- Utility ----------
-        function formatTime(seconds) {
-            const m = Math.floor(seconds / 60);
-            const s = Math.floor(seconds % 60);
-            return `${m}:${s.toString().padStart(2, '0')}`;
-        }
+    connect(remoteId) {
+        if (remoteId === this.myId) return;
+        if (this.connections.has(remoteId)) return;
+        const conn = this.peer.connect(remoteId, { reliable: true });
+        this._handleConnection(conn);
+    }
 
-        function logStatus(msg) {
-            statusTag.textContent = msg;
-        }
+    _handleConnection(conn) {
+        conn.on('open', () => {
+            this.connections.set(conn.peer, conn);
+            this._emitStatus('connected', conn.peer);
+            this._startHeartbeat(conn);
+            this._resumeQueue(conn.peer);
+            if (this.callbacks.onPeerConnected) this.callbacks.onPeerConnected(conn.peer);
+        });
+        conn.on('data', (data) => this._processIncoming(conn.peer, data));
+        conn.on('close', () => {
+            this.connections.delete(conn.peer);
+            this._emitStatus('disconnected', conn.peer);
+            this._stopHeartbeat(conn.peer);
+            if (this.callbacks.onPeerDisconnected) this.callbacks.onPeerDisconnected(conn.peer);
+        });
+        conn.on('error', (err) => {
+            console.warn('Connection error:', err);
+            this.connections.delete(conn.peer);
+        });
+    }
 
-        // ---------- PeerJS Initialization ----------
-        function initPeer() {
-            peer = new Peer(null, {
-                debug: 0,  // برای کاهش لاگ‌ها 0 تنظیم شود
-                config: {
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                }
-            });
+    send(remoteId, payload) {
+        const message = {
+            id: this._generateUUID(),
+            type: payload.type || 'CUSTOM',
+            payload: payload,
+            timestamp: Date.now(),
+        };
+        if (!this.outgoingQueues.has(remoteId)) {
+            this.outgoingQueues.set(remoteId, new Map());
+        }
+        const queue = this.outgoingQueues.get(remoteId);
+        queue.set(message.id, { message, retries: 0, timer: null });
+        this._attemptSend(remoteId, message);
+    }
 
-            peer.on('open', (id) => {
-                myPeerId = id;
-                myPeerIdSpan.textContent = id;
-                logStatus('✅ آماده (شناسه دریافت شد)');
-            });
+    _attemptSend(remoteId, message) {
+        const conn = this.connections.get(remoteId);
+        if (!conn || !conn.open) {
+            this._scheduleRetry(remoteId, message);
+            return;
+        }
+        try {
+            conn.send(message);
+            this._scheduleRetry(remoteId, message);
+        } catch (e) {
+            this._scheduleRetry(remoteId, message);
+        }
+    }
 
-            peer.on('connection', (incomingConn) => {
-                // اگر از قبل اتصالی وجود داشته باشد، اتصال جدید را قبول می‌کنیم
-                if (conn) {
-                    incomingConn.on('open', () => incomingConn.close());
-                    return;
-                }
-                setupConnection(incomingConn);
-            });
+    _scheduleRetry(remoteId, message) {
+        const queue = this.outgoingQueues.get(remoteId);
+        if (!queue) return;
+        const entry = queue.get(message.id);
+        if (!entry) return;
+        if (entry.timer) clearTimeout(entry.timer);
+        if (entry.retries >= this.maxRetries) {
+            queue.delete(message.id);
+            this._emitStatus('send_failed', message.id);
+            return;
+        }
+        entry.timer = setTimeout(() => {
+            entry.retries++;
+            this._attemptSend(remoteId, message);
+        }, this.retryDelay);
+    }
 
-            peer.on('disconnected', () => {
-                logStatus('⚠️ قطع ارتباط از سرور، تلاش مجدد...');
-                peer.reconnect();
-            });
+    _processIncoming(senderId, data) {
+        if (data.type === 'ACK') {
+            this._handleAck(senderId, data.ackFor);
+            return;
+        }
+        if (this.processedIds.has(data.id)) return;
+        this.processedIds.add(data.id);
+        this._sendAck(senderId, data.id);
+        if (this.callbacks.onData) {
+            this.callbacks.onData(senderId, data.payload || data);
+        }
+    }
 
-            peer.on('error', (err) => {
-                logStatus('❌ خطا: ' + err.message);
-                console.error(err);
-            });
-        }
+    _sendAck(peerId, originalMsgId) {
+        const conn = this.connections.get(peerId);
+        if (conn && conn.open) {
+            conn.send({ type: 'ACK', ackFor: originalMsgId });
+        }
+    }
 
-        // ---------- Connection Handling ----------
-        function setupConnection(newConn) {
-            conn = newConn;
-            conn.on('open', () => {
-                logStatus('🔗 متصل به هم‌گام');
-                // ارسال وضعیت فعلی ویدیو به طرف مقابل
-                if (player.src && !player.paused) {
-                    sendSync({ action: 'play', time: player.currentTime });
-                }
-            });
+    _handleAck(peerId, msgId) {
+        const queue = this.outgoingQueues.get(peerId);
+        if (!queue) return;
+        const entry = queue.get(msgId);
+        if (entry) {
+            if (entry.timer) clearTimeout(entry.timer);
+            queue.delete(msgId);
+        }
+    }
 
-            conn.on('data', (data) => {
-                handleIncomingData(data);
-            });
+    _resumeQueue(peerId) {
+        const queue = this.outgoingQueues.get(peerId);
+        if (!queue) return;
+        for (let [msgId, entry] of queue) {
+            if (entry.timer) clearTimeout(entry.timer);
+            this._attemptSend(peerId, entry.message);
+        }
+    }
 
-            conn.on('close', () => {
-                conn = null;
-                logStatus('🔌 اتصال قطع شد');
-            });
+    _startHeartbeat(conn) {
+        if (conn.heartbeatTimer) return;
+        conn.heartbeatTimer = setInterval(() => {
+            if (conn.open) conn.send({ type: 'PING' });
+            else this._stopHeartbeat(conn.peer);
+        }, this.heartbeatInterval);
+    }
 
-            conn.on('error', (err) => {
-                console.error('Connection error:', err);
-                conn = null;
-            });
-        }
+    _stopHeartbeat(peerId) {
+        const conn = this.connections.get(peerId);
+        if (conn && conn.heartbeatTimer) {
+            clearInterval(conn.heartbeatTimer);
+            conn.heartbeatTimer = null;
+        }
+    }
 
-        function connectToPeer(remoteId) {
-            if (!peer || remoteId === myPeerId) {
-                alert('شناسه نامعتبر');
-                return;
-            }
-            if (conn) {
-                conn.close();
-            }
-            const newConn = peer.connect(remoteId, { reliable: true });
-            setupConnection(newConn);
-        }
+    onData(callback) { this.callbacks.onData = callback; }
+    onStatus(callback) { this.callbacks.onStatus = callback; }
+    onPeerConnected(callback) { this.callbacks.onPeerConnected = callback; }
+    onPeerDisconnected(callback) { this.callbacks.onPeerDisconnected = callback; }
 
-        // ---------- Data Handling ----------
-        function handleIncomingData(data) {
-            switch (data.type) {
-                case 'SYNC':
-                    applySync(data);
-                    break;
-                case 'CHAT':
-                    addMessage(data.text, false, data.sender);
-                    break;
-                default:
-                    break;
-            }
-        }
+    _emitStatus(type, detail) {
+        if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() });
+    }
 
-        function sendSync(syncObj) {
-            if (conn && conn.open) {
-                conn.send({ type: 'SYNC', ...syncObj });
-            }
-        }
+    _generateUUID() {
+        return 'xxxx-4xxx-yxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
 
-        function sendChat(text) {
-            if (conn && conn.open) {
-                conn.send({ type: 'CHAT', text, sender: myPeerId.substring(0,6) });
-            }
-        }
+    destroy() { if (this.peer) this.peer.destroy(); }
+}
 
-        // ---------- Synchronization Logic ----------
-        function applySync({ action, time }) {
-            if (isSyncing) return;         // از حلقه جلوگیری کن
-            isSyncing = true;
+/**
+ * ============== 2. Main Application Logic ==============
+ */
+(function() {
+    // DOM Elements
+    const loginOverlay = document.getElementById('login-overlay');
+    const nameInput = document.getElementById('name-input');
+    const btnLogin = document.getElementById('btn-login');
+    const mainApp = document.getElementById('main-app');
+    const player = document.getElementById('player');
+    const fileUploader = document.getElementById('file-uploader');
+    const btnPlay = document.getElementById('btn-play');
+    const btnPause = document.getElementById('btn-pause');
+    const speedSelect = document.getElementById('speed-select');
+    const statusTag = document.getElementById('status-tag');
+    const usersBar = document.getElementById('users-bar');
+    const messagesDiv = document.getElementById('messages');
+    const msgInput = document.getElementById('msg-input');
 
-            try {
-                if (player.src) {
-                    player.currentTime = time;
-                    if (action === 'play') {
-                        player.play().catch(() => {});
-                    } else if (action === 'pause') {
-                        player.pause();
-                    }
-                }
-            } finally {
-                setTimeout(() => { isSyncing = false; }, 200);
-            }
-        }
+    let myName = '';
+    let mqttClient = null;
+    const network = new EnterpriseNetworkEngine();
+    const connectedPeers = new Map(); // peerId -> name
+    const chatHistory = [];            // ذخیره آخرین پیام‌ها برای تاریخچه
+    const HISTORY_LENGTH = 20;
+    let isSyncing = false;
 
-        // ---------- Player Controls ----------
-        function playVideo() {
-            if (!player.src) {
-                alert('ابتدا یک فایل ویدیویی انتخاب کنید');
-                return;
-            }
-            player.play().then(() => {
-                if (!isSyncing) {
-                    sendSync({ action: 'play', time: player.currentTime });
-                }
-            }).catch(e => console.warn('Play failed:', e));
-        }
+    // اضافه کردن پیام به رابط کاربری و تاریخچه
+    function addMessage(text, isSent, senderName = '') {
+        const div = document.createElement('div');
+        div.className = `chat-message ${isSent ? 'msg-sent' : 'msg-received'}`;
+        const sender = isSent ? 'من' : (senderName || 'ناشناس');
+        div.innerHTML = `<div>${escapeHtml(text)}</div><div class="msg-info">${sender} • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+        messagesDiv.appendChild(div);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-        function pauseVideo() {
-            if (!player.src) return;
-            player.pause();
-            if (!isSyncing) {
-                sendSync({ action: 'pause', time: player.currentTime });
-            }
-        }
+        // ذخیره در تاریخچه
+        const msgObj = { text, sender: isSent ? myName : senderName, timestamp: Date.now(), id: Date.now().toString(36) + Math.random() };
+        chatHistory.push(msgObj);
+        // محدود نگه داشتن تاریخچه
+        while (chatHistory.length > HISTORY_LENGTH) chatHistory.shift();
+    }
 
-        // وقتی کاربر بصورت دستی ویدیو را پلی/پاز کند (از طریق دکمه‌های ما)
-        btnPlay.addEventListener('click', playVideo);
-        btnPause.addEventListener('click', pauseVideo);
+    // ارسال تاریخچه به یک peer خاص
+    function sendHistory(peerId) {
+        const lastMessages = chatHistory.slice(-HISTORY_LENGTH);
+        network.send(peerId, { type: 'HISTORY', messages: lastMessages });
+    }
 
-        // همگام‌سازی خودکار هنگام پایان ویدیو (اختیاری)
-        player.addEventListener('ended', () => {
-            if (!isSyncing) {
-                sendSync({ action: 'pause', time: player.duration || 0 });
-            }
-        });
+    // پاک‌سازی HTML
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[m]);
+    }
 
-        // سرعت پخش
-        speedSelect.addEventListener('change', () => {
-            player.playbackRate = parseFloat(speedSelect.value);
-            // سرعت به طرف مقابل ارسال نمی‌شود، صرفاً محلی است
-        });
+    // به‌روزرسانی لیست کاربران
+    function updateUsersBar() {
+        usersBar.innerHTML = `<span class="user-chip">👤 ${myName} (من)</span>` +
+            Array.from(connectedPeers.entries()).map(([id, name]) => 
+                `<span class="user-chip">👤 ${name || id.substring(0,6)}</span>`
+            ).join('');
+    }
 
-        // انتخاب فایل
-        fileUploader.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const url = URL.createObjectURL(file);
-                player.src = url;
-                player.load();
-                logStatus('🎬 فیلم بارگذاری شد');
-                // اگر متصل هستیم، می‌توانیم همگام‌سازی را اطلاع دهیم
-                if (conn && conn.open) {
-                    sendSync({ action: 'pause', time: 0 });
-                }
-            }
-        });
+    // همگام‌سازی ویدیو
+    function applySync(action, time) {
+        if (isSyncing) return;
+        isSyncing = true;
+        try {
+            if (player.src) {
+                player.currentTime = time;
+                if (action === 'play') player.play().catch(() => {});
+                else if (action === 'pause') player.pause();
+            }
+        } finally {
+            setTimeout(() => { isSyncing = false; }, 200);
+        }
+    }
 
-        // ---------- Chat ----------
-        function addMessage(text, isSent, sender = '') {
-            const div = document.createElement('div');
-            div.className = `chat-message ${isSent ? 'msg-sent' : 'msg-received'}`;
-            div.innerHTML = `<div>${escapeHtml(text)}</div>
-                            ${!isSent ? `<div class="msg-info">${sender || 'طرف مقابل'}</div>` : ''}`;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
+    function sendSync(action) {
+        const time = player.currentTime;
+        // ارسال به همه peers
+        for (let peerId of connectedPeers.keys()) {
+            network.send(peerId, { type: 'SYNC', action, time });
+        }
+    }
 
-        function escapeHtml(str) {
-            return str.replace(/[&<>"']/g, function(m) {
-                return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[m];
-            });
-        }
+    // رویدادهای شبکه
+    network.onStatus((status) => {
+        if (status.type === 'ready') {
+            statusTag.textContent = `✅ شناسه: ${status.detail.substring(0,6)}...`;
+            // انتشار در MQTT
+            if (mqttClient && mqttClient.connected) {
+                mqttClient.publish('cinema_mesh_room', JSON.stringify({
+                    peerId: network.myId,
+                    name: myName
+                }));
+            }
+        } else if (status.type === 'connected') {
+            statusTag.textContent = `🔗 متصل به ${status.detail.substring(0,6)}...`;
+            // درخواست نام از peer متصل شده
+            // ارسال نام من هم
+            network.send(status.detail, { type: 'HELLO', name: myName });
+        }
+    });
 
-        msgInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && msgInput.value.trim()) {
-                const text = msgInput.value.trim();
-                addMessage(text, true);
-                sendChat(text);
-                msgInput.value = '';
-            }
-        });
+    network.onPeerConnected = (peerId) => {
+        // وقتی یک اتصال جدید برقرار شد، تاریخچه را ارسال کن
+        sendHistory(peerId);
+    };
 
-        // ---------- Connection UI ----------
-        btnConnect.addEventListener('click', () => {
-            const remoteId = remoteIdInput.value.trim();
-            if (remoteId) {
-                connectToPeer(remoteId);
-            }
-        });
+    network.onPeerDisconnected = (peerId) => {
+        connectedPeers.delete(peerId);
+        updateUsersBar();
+    };
 
-        btnCopy.addEventListener('click', () => {
-            if (myPeerId) {
-                navigator.clipboard.writeText(myPeerId).then(() => {
-                    alert('شناسه کپی شد');
-                }).catch(() => {
-                    prompt('شناسه شما:', myPeerId);
-                });
-            }
-        });
+    network.onData((senderId, data) => {
+        switch (data.type) {
+            case 'HELLO':
+                // دریافت نام peer
+                connectedPeers.set(senderId, data.name || 'ناشناس');
+                updateUsersBar();
+                // ارسال تاریخچه به ایشان
+                sendHistory(senderId);
+                break;
+            case 'HISTORY':
+                // دریافت تاریخچه پیام‌ها
+                data.messages.forEach(msg => {
+                    // جلوگیری از تکراری با بررسی محتوای تقریبی (بهتر است id ذخیره شود)
+                    if (!chatHistory.find(m => m.id === msg.id)) {
+                        addMessage(msg.text, false, msg.sender);
+                    }
+                });
+                break;
+            case 'SYNC':
+                applySync(data.action, data.time);
+                break;
+            case 'CHAT':
+                addMessage(data.text, false, data.sender);
+                break;
+        }
+    });
 
-        // ورود سریع با Enter در فیلد Remote ID
-        remoteIdInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                btnConnect.click();
-            }
-        });
+    // ورود کاربر
+    btnLogin.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return alert('لطفاً نام خود را وارد کنید');
+        myName = name;
 
-        // ---------- Start ----------
-        initPeer();
+        // پنهان کردن صفحه ورود و نمایش برنامه اصلی
+        loginOverlay.style.display = 'none';
+        mainApp.style.display = 'flex';
+        updateUsersBar();
 
-        // مدیریت قطع اتصال سراسری
-        window.addEventListener('beforeunload', () => {
-            if (conn) conn.close();
-            if (peer) peer.destroy();
-        });
-    })();
+        // راه‌اندازی MQTT
+        mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+        mqttClient.on('connect', () => {
+            mqttClient.subscribe('cinema_mesh_room');
+            // انتشار اطلاعات من
+            mqttClient.publish('cinema_mesh_room', JSON.stringify({
+                peerId: network.myId,
+                name: myName
+            }));
+        });
+        mqttClient.on('message', (topic, message) => {
+            try {
+                const data = JSON.parse(message.toString());
+                if (data.peerId && data.peerId !== network.myId) {
+                    // اتصال به peer جدید
+                    network.connect(data.peerId);
+                    // ذخیره نام برای بعد (در صورت نرسیدن HELLO)
+                    if (data.name) {
+                        connectedPeers.set(data.peerId, data.name);
+                        updateUsersBar();
+                    }
+                }
+            } catch (e) {}
+        });
+
+        // راه‌اندازی شبکه P2P
+        network.init();
+    });
+
+    // کنترل‌های ویدیو
+    btnPlay.addEventListener('click', () => {
+        if (!player.src) return alert('لطفاً یک فایل ویدیویی انتخاب کنید');
+        player.play().then(() => { if (!isSyncing) sendSync('play'); }).catch(e => console.warn(e));
+    });
+
+    btnPause.addEventListener('click', () => {
+        if (!player.src) return;
+        player.pause();
+        if (!isSyncing) sendSync('pause');
+    });
+
+    speedSelect.addEventListener('change', () => {
+        player.playbackRate = parseFloat(speedSelect.value);
+    });
+
+    fileUploader.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            player.src = url;
+            player.load();
+        }
+    });
+
+    // چت
+    msgInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && msgInput.value.trim()) {
+            const text = msgInput.value.trim();
+            addMessage(text, true);
+            // ارسال به همه
+            for (let peerId of connectedPeers.keys()) {
+                network.send(peerId, { type: 'CHAT', text, sender: myName });
+            }
+            msgInput.value = '';
+        }
+    });
+
+    // قطع اتصال هنگام خروج
+    window.addEventListener('beforeunload', () => {
+        network.destroy();
+        if (mqttClient) mqttClient.end();
+    });
+})();
 </script>
 </body>
 </html>
