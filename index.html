@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
-    <title>CinemaCore Pro | همگام‌سازی ویدئوی ثابت</title>
+    <title>CinemaCore Pro | همگام‌سازی کامل با نوار پیشرفت</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
         :root {
             --bg: #0b141a; --panel: #1e2a32; --accent: #00a884;
             --text: #e9edef; --input-bg: #2a3942; --radius: 16px;
@@ -16,8 +16,7 @@
             background: var(--bg); color: var(--text);
             font-family: 'Segoe UI', Tahoma, sans-serif;
             height: 100dvh; display: flex; flex-direction: column;
-            overflow: hidden; -webkit-tap-highlight-color: transparent;
-            font-size: 14px;
+            overflow: hidden; font-size: 14px;
         }
         #login-overlay {
             position: fixed; top:0; left:0; right:0; bottom:0;
@@ -43,10 +42,12 @@
             background: #000; width: 100%;
             display: flex; align-items: center; justify-content: center;
             max-height: 35vh; flex-shrink: 0;
+            position: relative;
         }
         video {
             width: 100%; height: auto; max-height: 35vh; display: block;
         }
+        /* کنترل‌های اصلی */
         .controls {
             background: var(--panel); padding: 6px 8px;
             display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
@@ -70,6 +71,35 @@
         #status-tag {
             font-size: 11px; color: #8696a0; margin-right: auto;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
+        }
+        /* نوار پیشرفت (seekbar) */
+        .progress-container {
+            background: var(--panel); padding: 4px 8px;
+            display: flex; align-items: center; gap: 8px;
+            flex-shrink: 0;
+            border-bottom: 1px solid #2f3b44;
+        }
+        .time-display {
+            font-size: 12px; font-family: monospace;
+            background: #0b141a; padding: 2px 6px; border-radius: 12px;
+            min-width: 70px; text-align: center;
+        }
+        .seek-slider {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #2a3942;
+            border-radius: 5px;
+            outline: none;
+        }
+        .seek-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 2px black;
         }
         .users-bar {
             background: var(--panel); padding: 2px 8px; font-size: 11px;
@@ -102,6 +132,7 @@
         }
         @media (max-width: 350px) {
             .btn { min-width: 32px; height: 32px; font-size: 12px; padding: 0 8px; }
+            .time-display { font-size: 10px; min-width: 60px; }
         }
     </style>
 </head>
@@ -116,6 +147,14 @@
 <div id="main-app">
     <div class="player-container">
         <video id="player" playsinline crossorigin="anonymous"></video>
+    </div>
+
+    <!-- نوار پیشرفت (seekbar) و زمان -->
+    <div class="progress-container">
+        <span class="time-display" id="current-time">00:00</span>
+        <input type="range" id="seek-bar" class="seek-slider" value="0" step="0.01">
+        <span class="time-display" id="duration">00:00</span>
+        <button id="fullscreen-btn" class="btn icon" title="تمام صفحه">⤢</button>
     </div>
 
     <div class="controls">
@@ -141,11 +180,10 @@
 
 <script>
 (function(){
-    // ========== تنظیمات ویدئوی ثابت (آدرس دلخواه خود را اینجا قرار دهید) ==========
+    // ========== ویدئوی ثابت (قابل تغییر) ==========
     const STATIC_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-    // می‌توانید به هر ویدئوی معتبر دیگری تغییر دهید (حتی ویدئوی محلی با بلاب)
     
-    // ========== راه‌اندازی اولیه ==========
+    // ========== عناصر DOM ==========
     const loginOverlay = document.getElementById('login-overlay');
     const nameInput = document.getElementById('name-input');
     const btnLogin = document.getElementById('btn-login');
@@ -158,6 +196,10 @@
     const usersBar = document.getElementById('users-bar');
     const messagesDiv = document.getElementById('messages');
     const msgInput = document.getElementById('msg-input');
+    const seekBar = document.getElementById('seek-bar');
+    const currentTimeSpan = document.getElementById('current-time');
+    const durationSpan = document.getElementById('duration');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
 
     let myName = '';
     let myPeerId = null;
@@ -165,6 +207,7 @@
     let connectedPeers = new Map(); // peerId -> { name, conn }
     const MAX_PEERS = 10;
     let videoSync = null;
+    let isSeeking = false; // برای جلوگیری از حلقه بازخورد در هنگام جابجایی با اسلایدر
 
     // ========== توابع کمکی امن ==========
     function escapeHtml(str) {
@@ -181,6 +224,15 @@
         let cleaned = name.trim().slice(0, 20);
         cleaned = cleaned.replace(/[<>]/g, '');
         return cleaned || 'ناشناس';
+    }
+
+    function formatTime(seconds) {
+        if (isNaN(seconds)) return "00:00";
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        if (hrs > 0) return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+        return `${mins}:${secs.toString().padStart(2,'0')}`;
     }
 
     function addMessage(text, isSent, senderName = '') {
@@ -202,7 +254,7 @@
         usersBar.innerHTML = html;
     }
 
-    // ========== کلاس شبکه قابل اعتماد (همان نسخه قبل) ==========
+    // ========== کلاس شبکه قابل اعتماد (همان نسخه قبل با بهبود جزئی) ==========
     class EnterpriseNetworkEngine {
         constructor() {
             this.peer = null;
@@ -330,7 +382,7 @@
         destroy() { if (this.peer) this.peer.destroy(); }
     }
 
-    // ========== موتور همگام‌سازی ویدئو (بدون تغییر) ==========
+    // ========== موتور همگام‌سازی ویدئو (تقویت شده برای نوار پیشرفت) ==========
     class VideoSyncEngine {
         constructor(player, network, getPeersFunc) {
             this.player = player;
@@ -350,6 +402,7 @@
             this.player.addEventListener('canplay', () => this._onBufferingEnd());
             this.player.addEventListener('seeked', () => this._onLocalSeek());
             this.player.addEventListener('ratechange', () => this._onLocalRateChange());
+            // به‌روزرسانی نوار پیشرفت توسط timeupdate در جای دیگر انجام می‌شود.
         }
         _onLocalPlay() { if (!this.syncLock) this._broadcastSync('play', this.player.currentTime); }
         _onLocalPause() { if (!this.syncLock) this._broadcastSync('pause', this.player.currentTime); }
@@ -412,7 +465,9 @@
                 this.clockOffset.set(senderId, { offset: avgOffset, lastUpdate: now });
             }
             try {
-                if (this.player.src && Math.abs(this.player.currentTime - compensatedTime) > 0.3) this.player.currentTime = compensatedTime;
+                if (this.player.src && Math.abs(this.player.currentTime - compensatedTime) > 0.3) {
+                    this.player.currentTime = compensatedTime;
+                }
                 if (action === 'play' || action === 'seek') this.player.play().catch(()=>{});
                 else if (action === 'pause') this.player.pause();
                 this._lastRemoteAction = action;
@@ -431,13 +486,45 @@
         network.send(peerId, { type: 'HELLO', name: myName });
     }
 
-    // بارگذاری ویدئوی ثابت
     function loadStaticVideo() {
         player.src = STATIC_VIDEO_URL;
         player.load();
         addMessage(`🎬 ویدئوی ثابت بارگذاری شد`, false, 'سیستم');
     }
 
+    // به‌روزرسانی نوار پیشرفت و زمان
+    function updateProgress() {
+        if (!isSeeking && player.duration) {
+            const percent = (player.currentTime / player.duration) * 100;
+            seekBar.value = percent;
+            currentTimeSpan.textContent = formatTime(player.currentTime);
+        }
+        if (player.duration && !isNaN(player.duration)) {
+            durationSpan.textContent = formatTime(player.duration);
+            seekBar.max = 100;
+        }
+    }
+
+    // جابجایی با اسلایدر
+    function handleSeek() {
+        if (!player.duration) return;
+        isSeeking = true;
+        const seekTo = (seekBar.value / 100) * player.duration;
+        player.currentTime = seekTo;
+        // broadcast توسط رویداد seeked انجام می‌شود
+        setTimeout(() => { isSeeking = false; }, 100);
+    }
+
+    // تمام صفحه
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => console.warn(err));
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    // رویدادهای ورود و راه‌اندازی
     btnLogin.addEventListener('click', () => {
         let rawName = nameInput.value.trim();
         if (!rawName) return alert('لطفاً نام خود را وارد کنید');
@@ -463,7 +550,6 @@
                         }
                     } catch(e) {}
                 });
-                // بارگذاری ویدئو بعد از آماده شدن شبکه
                 loadStaticVideo();
             } else if (status.type === 'connected') {
                 statusTag.textContent = `🔗 ${status.detail.substring(0,6)}`;
@@ -511,11 +597,10 @@
         videoSyncEngine = new VideoSyncEngine(player, network, getConnectedPeerIds);
     });
 
-    // کنترل‌های UI
+    // اتصال رویدادهای UI
     btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
     btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
     speedSelect.addEventListener('change', () => { if(videoSyncEngine) videoSyncEngine.setPlaybackRate(parseFloat(speedSelect.value)); });
-
     msgInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && msgInput.value.trim()) {
             const text = msgInput.value.trim();
@@ -526,6 +611,13 @@
             msgInput.value = '';
         }
     });
+    seekBar.addEventListener('input', handleSeek);
+    player.addEventListener('timeupdate', updateProgress);
+    player.addEventListener('loadedmetadata', () => {
+        durationSpan.textContent = formatTime(player.duration);
+        seekBar.max = 100;
+    });
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
 
     window.addEventListener('beforeunload', () => {
         if (network) network.destroy();
