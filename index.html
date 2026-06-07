@@ -3,21 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>سینمای موبایل</title>
+    <title>سینمای گروهی بدون باگ</title>
     
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     
     <style>
-        /* صفر کردن فاصله ها و استفاده از فونت استاندارد */
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: Tahoma, Arial, sans-serif; }
-        
-        /* نکته طلایی موبایل: استفاده از dvh (dynamic viewport height)
-           وقتی کیبورد بالا میاد، این ارتفاع خودکار کم میشه تا چت زیر کیبورد نره!
-        */
         body { background-color: #121212; color: #ffffff; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 
-        /* --- صفحه اول: فقط گرفتن نام کاربر --- */
+        /* صفحه ورود */
         #login-screen {
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             height: 100%; padding: 20px; background-color: #1a1a1a;
@@ -32,62 +27,45 @@
             border-radius: 10px; cursor: pointer; font-size: 18px; font-weight: bold; width: 80%;
         }
 
-        /* --- صفحه دوم: محیط اصلی برنامه (ابتدا مخفی است) --- */
+        /* صفحه اصلی */
         #app-screen { display: none; flex-direction: column; height: 100%; }
 
-        /* بخش ویدیو: در بالای صفحه ثابت میماند */
-        .video-wrapper {
-            flex-shrink: 0; /* اجازه نمیدهیم این بخش فشرده شود */
-            background-color: #000;
-            border-bottom: 1px solid #333;
-        }
-        video {
-            width: 100%;
-            max-height: 35dvh; /* حداکثر 35 درصد از صفحه گوشی را میگیرد */
-            display: block;
-            object-fit: contain;
-        }
+        /* ویدیو */
+        .video-wrapper { flex-shrink: 0; background-color: #000; border-bottom: 1px solid #333; position: relative; }
+        video { width: 100%; max-height: 35dvh; display: block; object-fit: contain; }
         
-        /* دکمه های کنترل ویدیو: بسیار فشرده و بهینه */
-        .controls {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 8px; background-color: #222; font-size: 13px;
-        }
-        .controls button, .file-upload {
-            background-color: #007bff; color: white; border: none;
-            padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer;
-        }
+        /* دکمه های کنترل */
+        .controls { display: flex; justify-content: space-between; align-items: center; padding: 8px; background-color: #222; font-size: 13px; }
+        .controls button, .file-upload { background-color: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .file-upload { background-color: #ff9800; display: inline-block; }
         input[type="file"] { display: none; }
-        #users-count { font-size: 12px; color: #4CAF50; }
+        #users-count { font-size: 12px; color: #4CAF50; font-weight: bold; }
 
-        /* بخش چت: این بخش کش می آید تا فضای خالی را پر کند */
-        .chat-area {
-            flex-grow: 1; /* پر کردن کل فضای باقیمانده */
-            display: flex; flex-direction: column; overflow: hidden;
+        /* قفل شکن موبایل (سافاری/کروم) */
+        #unlock-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center;
+            z-index: 10; color: #fff; font-size: 14px; text-align: center; padding: 10px;
         }
-        .chat-box {
-            flex-grow: 1; overflow-y: auto; padding: 10px;
-            display: flex; flex-direction: column; gap: 8px;
-        }
+        #unlock-overlay button { padding: 10px 20px; background: #4CAF50; border: none; color: white; border-radius: 5px; font-weight: bold; margin-top: 10px; cursor: pointer;}
+
+        /* چت */
+        .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .chat-box { flex-grow: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
         
-        /* استایل پیام ها */
-        .msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; word-wrap: break-word; }
-        .msg-my { background-color: #4CAF50; align-self: flex-start; border-bottom-right-radius: 0; }
-        .msg-friend { background-color: #333; align-self: flex-end; border-bottom-left-radius: 0; }
+        .msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; word-wrap: break-word; position: relative; }
+        .msg-my { background-color: #005c4b; align-self: flex-start; border-bottom-right-radius: 0; padding-bottom: 15px; }
+        .msg-friend { background-color: #202c33; align-self: flex-end; border-bottom-left-radius: 0; }
         .msg-system { background-color: transparent; color: #ffeb3b; font-size: 11px; align-self: center; text-align: center; width: 100%; }
-        .sender-name { font-size: 10px; color: #ccc; margin-bottom: 3px; display: block; }
+        
+        .sender-name { font-size: 10px; color: #25D366; margin-bottom: 3px; display: block; font-weight: bold; }
+        
+        .message-status { position: absolute; bottom: 2px; right: 8px; font-size: 10px; color: #999; }
+        .message-status.read { color: #34b7f1; }
 
-        /* بخش ارسال پیام: پایین صفحه چسبیده است */
-        .input-area {
-            flex-shrink: 0; display: flex; padding: 8px; background-color: #1a1a1a; border-top: 1px solid #333;
-        }
-        .input-area input {
-            flex-grow: 1; padding: 12px; border-radius: 20px; border: none; outline: none; margin-left: 8px; font-size: 14px;
-        }
-        .input-area button {
-            background-color: #007bff; color: white; border: none; padding: 0 20px; border-radius: 20px; font-weight: bold;
-        }
+        .input-area { flex-shrink: 0; display: flex; padding: 8px; background-color: #1a1a1a; border-top: 1px solid #333; }
+        .input-area input { flex-grow: 1; padding: 12px; border-radius: 20px; border: none; outline: none; margin-left: 8px; font-size: 14px; }
+        .input-area button { background-color: #007bff; color: white; border: none; padding: 0 20px; border-radius: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -99,66 +77,77 @@
     </div>
 
     <div id="app-screen">
-        
         <div class="video-wrapper">
+            <div id="unlock-overlay">
+                <div>
+                    <p>برای همگام‌سازی صدا و تصویر با دیگران، دکمه زیر را لمس کنید</p>
+                    <button onclick="unlockAudioVideo()">فعال‌سازی پخش گروهی</button>
+                </div>
+            </div>
             <video id="my-video" playsinline></video>
             <div class="controls">
                 <label class="file-upload">
                     انتخاب فیلم
                     <input type="file" id="video-upload" accept="video/*">
                 </label>
-                <span id="users-count">افراد: 1</span>
+                <span id="users-count">افراد: ۱</span>
                 <button id="play-pause-btn" onclick="togglePlayPause()">پخش ▶</button>
             </div>
         </div>
 
         <div class="chat-area">
-            <div class="chat-box" id="chat-box">
-                </div>
+            <div class="chat-box" id="chat-box"></div>
             <div class="input-area">
                 <input type="text" id="chat-input" placeholder="پیام...">
                 <button onclick="sendMessage()">ارسال</button>
             </div>
         </div>
-        
     </div>
 
     <script>
-        // --- متغیرهای سراسری ---
-        const loginScreen = document.getElementById('login-screen');
-        const appScreen = document.getElementById('app-screen');
-        const video = document.getElementById('my-video');
-        const playPauseBtn = document.getElementById('play-pause-btn');
-        const chatBox = document.getElementById('chat-box');
-        
-        // نام اتاق به صورت پیشفرض و ثابت در کد تنظیم شده است تا کسی نیاز به وارد کردنش نداشته باشد
-        const FIXED_ROOM_NAME = "global_cinema_room_888999"; 
+        const FIXED_ROOM_NAME = "global_cinema_room_v3_stable"; 
         let myName = "";
         let peer = null;
         let myPeerId = null;
-        let connections = [];
-        let isRemoteAction = false; // برای جلوگیری از لوپ بینهایت دکمه پلی/پوز
+        let peersMap = {}; 
+        
+        // جلوگیری از تکرار رویدادها و ایجاد لوپ زمانی (دقت بالاتر)
+        let isRemoteAction = false;
+        let lastActionTime = 0; 
+        
+        let chatHistory = []; 
+        let processedMessages = new Set(); 
 
-        // اتصال به سرور MQTT رایگان برای شبکه شدن خودکار افراد
-        const mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+        const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
-        // --- قدم ۱: تابعی که با زدن دکمه ورود اجرا میشود ---
+        // حل مشکل قفل مرورگر موبایل با لمس اولیه کاربر
+        function unlockAudioVideo() {
+            const video = document.getElementById('my-video');
+            video.play().then(() => {
+                video.pause();
+                document.getElementById('unlock-overlay').style.style.display = 'none';
+                addSystemMessage("سیستم پخش موبایل فعال شد.");
+            }).catch(err => {
+                // اگر هنوز فیلمی انتخاب نشده هم قفل مرورگر میشکند
+                document.getElementById('unlock-overlay').style.display = 'none';
+            });
+        }
+
         function startApp() {
             const nameInput = document.getElementById('username-input').value.trim();
-            if (nameInput === "") {
-                alert("لطفا اول نام خودت رو بنویس!");
-                return;
-            }
+            if (nameInput === "") { alert("لطفا اول نام خودت رو بنویس!"); return; }
             myName = nameInput;
 
-            // مخفی کردن صفحه ورود و نمایش صفحه اصلی پلیر
-            loginScreen.style.display = "none";
-            appScreen.style.display = "flex";
+            document.getElementById('login-screen').style.display = "none";
+            document.getElementById('app-screen').style.display = "flex";
 
-            // پیام خوشامدگویی در چت
             addSystemMessage(`سلام ${myName}! در حال اتصال به شبکه جهانی...`);
 
-            // راه اندازی PeerJS با استفاده از سرورهای STUN گوگل (برای عبور از VPN و فایروال)
+            initPeer();
+        }
+
+        // مقداردهی اولیه شبکه Peer با قابلیت تست اتصال مجدد
+        function initPeer() {
             peer = new Peer({
                 config: {
                     'iceServers': [
@@ -169,160 +158,132 @@
                 }
             });
 
-            // وقتی کدمان از سرور گرفته شد، وارد اتاق ثابت میشویم
             peer.on('open', function(id) {
                 myPeerId = id;
                 joinGlobalRoom();
             });
 
-            // پاسخگویی به کسانی که میخواهند به ما وصل شوند
             peer.on('connection', function(conn) {
                 setupNewConnection(conn);
             });
+
+            // حل مشکل قطع شدن ناگهانی اینترنت موبایل
+            peer.on('disconnected', function() {
+                addSystemMessage("اتصال شبکه قطع شد. در حال تلاش برای اتصال مجدد...");
+                peer.reconnect();
+            });
         }
 
-        // --- قدم ۲: ورود به اتاق ثابت ---
         function joinGlobalRoom() {
             mqttClient.subscribe(FIXED_ROOM_NAME, function(err) {
                 if (!err) {
-                    addSystemMessage("با موفقیت متصل شدی! منتظر بقیه باش...");
-                    // فریاد زدن کد خودمان در اتاق تا بقیه ما را پیدا کنند
+                    addSystemMessage("به سرور هماهنگ‌کننده متصل شدید.");
                     mqttClient.publish(FIXED_ROOM_NAME, myPeerId);
                 }
             });
 
-            // شنیدن کدهای بقیه افراد در اتاق
             mqttClient.on('message', function(topic, message) {
                 const receivedPeerId = message.toString();
-                const alreadyConnected = connections.find(c => c.peer === receivedPeerId);
-                
-                // اگر کد مال خودمان نبود و قبلا هم وصل نشده بودیم
-                if (receivedPeerId !== myPeerId && !alreadyConnected) {
+                if (receivedPeerId !== myPeerId && !peersMap[receivedPeerId]) {
                     const newConn = peer.connect(receivedPeerId);
                     setupNewConnection(newConn);
-                    // دوباره کد خودمان را میفرستیم تا شخص جدید هم ما را بشناسد
                     mqttClient.publish(FIXED_ROOM_NAME, myPeerId);
                 }
             });
         }
 
-        // --- قدم ۳: تنظیمات اتصال هر کاربر جدید ---
         function setupNewConnection(conn) {
             conn.on('open', function() {
-                connections.push(conn);
+                if (peersMap[conn.peer]) { peersMap[conn.peer].close(); }
+                peersMap[conn.peer] = conn;
                 updateUsersCount();
+
+                // حل مشکل لیدرهای همزمان:
+                // فقط و فقط کسی که آی دی Peer او از نظر حروف الفبا کوچکتر است وظیفه دارد تاریخچه را بفرستد.
+                // اینکار باعث میشود فقط یک نفر تاریخچه را ارسال کند، نه همه اعضای گروه!
+                const allIds = Object.keys(peersMap).concat(myPeerId).sort();
+                if (allIds[0] === myPeerId && chatHistory.length > 0) {
+                    conn.send({ type: 'history', messages: chatHistory });
+                }
             });
 
             conn.on('data', function(data) {
-                // اگر دیتا چت بود
                 if (data.type === 'chat') {
-                    displayMessage(data.sender, data.text, 'msg-friend');
+                    if (processedMessages.has(data.msgId)) return;
+                    processedMessages.add(data.msgId);
+                    saveToHistory(data);
+                    displayMessage(data.sender, data.text, 'msg-friend', data.msgId);
+                    conn.send({ type: 'ack', msgId: data.msgId });
                 } 
-                // اگر دیتا سیستم بود (مثل اعلام انتخاب فیلم)
+                else if (data.type === 'ack') {
+                    const tickElement = document.getElementById('tick-' + data.msgId);
+                    if (tickElement) {
+                        tickElement.innerText = '✓✓';
+                        tickElement.classList.add('read');
+                    }
+                }
+                else if (data.type === 'history') {
+                    syncHistory(data.messages);
+                }
                 else if (data.type === 'system') {
                     addSystemMessage(data.text);
                 }
-                // اگر دیتا دستور کنترل ویدیو بود
+                // دریافت دستورات ویدیویی (شامل پخش، مکث و جلو عقب کردن)
                 else if (data.type === 'video-control') {
                     syncVideo(data.action, data.time);
                 }
             });
 
-            conn.on('close', function() {
-                connections = connections.filter(c => c.peer !== conn.peer);
-                updateUsersCount();
-            });
+            conn.on('close', function() { delete peersMap[conn.peer]; updateUsersCount(); });
+            conn.on('error', function() { delete peersMap[conn.peer]; updateUsersCount(); });
         }
 
         function updateUsersCount() {
-            document.getElementById('users-count').innerText = `افراد: ${connections.length + 1}`;
+            const count = Object.keys(peersMap).length + 1;
+            document.getElementById('users-count').innerText = `افراد: ${count}`;
         }
 
         function broadcastData(data) {
-            connections.forEach(conn => {
+            Object.values(peersMap).forEach(conn => {
                 if (conn.open) conn.send(data);
             });
         }
 
-        // --- قدم ۴: هندل کردن انتخاب فایل ویدیو ---
-        document.getElementById('video-upload').addEventListener('change', function(event) {
-            const file = event.target.files[0];
-            if (file) {
-                video.src = URL.createObjectURL(file);
-                
-                // ساخت پیام اطلاع رسانی با نام فیلم
-                const infoMsg = `🎬 ${myName} ویدیوی [${file.name}] را انتخاب کرد.`;
-                
-                // نمایش برای خودمان
-                addSystemMessage(infoMsg);
-                
-                // ارسال برای بقیه اعضای گروه
-                broadcastData({ type: 'system', text: infoMsg });
-            }
-        });
-
-        // --- قدم ۵: پخش و مکث و سینک کردن (با دقت میلی ثانیه) ---
-        function togglePlayPause() {
-            if (video.paused) video.play();
-            else video.pause();
+        function saveToHistory(msgObj) {
+            chatHistory.push(msgObj);
+            if (chatHistory.length > 20) { chatHistory.shift(); }
         }
 
-        video.addEventListener('play', function() {
-            playPauseBtn.innerText = "مکث ⏸";
-            if (!isRemoteAction) {
-                // ارسال زمان دقیق به میلی ثانیه
-                broadcastData({ type: 'video-control', action: 'play', time: video.currentTime });
-            }
-            isRemoteAction = false;
-        });
-
-        video.addEventListener('pause', function() {
-            playPauseBtn.innerText = "پخش ▶";
-            if (!isRemoteAction) {
-                broadcastData({ type: 'video-control', action: 'pause', time: video.currentTime });
-            }
-            isRemoteAction = false;
-        });
-
-        // تابع اصلی سینک شدن ویدیوها
-        function syncVideo(action, time) {
-            isRemoteAction = true; 
-            
-            // اگر اختلاف زمانی بیشتر از 0.1 ثانیه (100 میلی ثانیه) بود، زمانها را یکی میکنیم
-            if (Math.abs(video.currentTime - time) > 0.1) {
-                video.currentTime = time;
-            }
-
-            if (action === 'play') video.play();
-            else if (action === 'pause') video.pause();
+        function syncHistory(incomingMessages) {
+            incomingMessages.forEach(msg => {
+                if (!processedMessages.has(msg.msgId)) {
+                    processedMessages.add(msg.msgId);
+                    saveToHistory(msg);
+                    displayMessage(msg.sender, msg.text, 'msg-friend', msg.msgId);
+                }
+            });
         }
 
-        // --- قدم ۶: بخش چت و تایپ ---
         function sendMessage() {
             const inputField = document.getElementById('chat-input');
             const text = inputField.value.trim();
             if (text === '') return;
 
-            // نمایش در صفحه خودمان
-            displayMessage('شما', text, 'msg-my');
-            
-            // ارسال به همه در شبکه با ذکر نام فرستنده
-            broadcastData({ type: 'chat', sender: myName, text: text });
+            const uniqueMsgId = Date.now() + '_' + Math.floor(Math.random() * 1000);
+            const msgObj = { type: 'chat', msgId: uniqueMsgId, sender: myName, text: text };
 
+            processedMessages.add(uniqueMsgId);
+            saveToHistory(msgObj);
+            displayMessage('شما', text, 'msg-my', uniqueMsgId);
+            broadcastData(msgObj);
             inputField.value = '';
         }
 
-        // وقتی دکمه Enter روی کیبورد موبایل زده شد
-        document.getElementById('chat-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') sendMessage();
-        });
-
-        // توابع کمکی برای رسم پیام در صفحه
-        function displayMessage(senderName, text, className) {
+        function displayMessage(senderName, text, className, msgId = null) {
+            const chatBox = document.getElementById('chat-box');
             const div = document.createElement('div');
             div.className = `msg ${className}`;
             
-            // اگر پیام سیستم نبود، نام فرستنده را بالایش مینویسیم
             if (className !== 'msg-system') {
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'sender-name';
@@ -333,14 +294,96 @@
             const textNode = document.createTextNode(text);
             div.appendChild(textNode);
             
+            if (className === 'msg-my' && msgId) {
+                const tickSpan = document.createElement('span');
+                tickSpan.className = 'message-status';
+                tickSpan.id = 'tick-' + msgId;
+                tickSpan.innerText = '✓';
+                div.appendChild(tickSpan);
+            }
+            
             chatBox.appendChild(div);
-            chatBox.scrollTop = chatBox.scrollHeight; // اسکرول خودکار به پایین
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         function addSystemMessage(text) {
             displayMessage('', text, 'msg-system');
         }
 
+        document.getElementById('chat-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // --- بخش فوق پیشرفته کنترل ویدیو ---
+        const video = document.getElementById('my-video');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+
+        document.getElementById('video-upload').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                video.src = URL.createObjectURL(file);
+                const infoMsg = `🎬 ${myName} ویدیوی [${file.name}] را انتخاب کرد.`;
+                addSystemMessage(infoMsg);
+                broadcastData({ type: 'system', text: infoMsg });
+            }
+        });
+
+        function togglePlayPause() {
+            // جلوگیری از اجرای دستور در صورت عدم بارگذاری فیلم
+            if (!video.src) { alert("ابتدا یک فایل ویدیو انتخاب کنید!"); return; }
+            if (video.paused) video.play();
+            else video.pause();
+        }
+
+        video.addEventListener('play', function() {
+            playPauseBtn.innerText = "مکث ⏸";
+            // تکنیک زمان‌بندی: اگر رویداد از طرف کاربر شبکه نیامده باشد، آن را بفرست
+            if (!isRemoteAction && (Date.now() - lastActionTime > 300)) {
+                broadcastData({ type: 'video-control', action: 'play', time: video.currentTime });
+            }
+            isRemoteAction = false;
+        });
+
+        video.addEventListener('pause', function() {
+            playPauseBtn.innerText = "پخش ▶";
+            if (!isRemoteAction && (Date.now() - lastActionTime > 300)) {
+                broadcastData({ type: 'video-control', action: 'pause', time: video.currentTime });
+            }
+            isRemoteAction = false;
+        });
+
+        // رفع مشکل جلو و عقب بردن فیلم (Seeking)
+        video.addEventListener('seeked', function() {
+            if (!isRemoteAction && (Date.now() - lastActionTime > 300)) {
+                broadcastData({ type: 'video-control', action: 'seek', time: video.currentTime });
+            }
+            isRemoteAction = false;
+        });
+
+        // هماهنگ‌سازی نهایی و بدون خطای ویدیوها
+        function syncVideo(action, time) {
+            // اگر ویدیویی هنوز لود نشده، دستور را نادیده بگیر تا خطا ندهد
+            if (!video.src) return; 
+
+            isRemoteAction = true; 
+            lastActionTime = Date.now();
+
+            // بررسی اختلاف زمانی با دقت ۱۰۰ میلی ثانیه
+            if (Math.abs(video.currentTime - time) > 0.1) {
+                video.currentTime = time;
+            }
+
+            // مدیریت اجرای دستورات با ساختار try-catch برای جلوگیری از قفل مرورگر
+            try {
+                if (action === 'play') {
+                    video.play().catch(() => { isRemoteAction = false; });
+                } else if (action === 'pause') {
+                    video.pause();
+                }
+            } catch (e) {
+                isRemoteAction = false;
+            }
+        }
     </script>
 </body>
 </html>
