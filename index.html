@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>سینما کر | نسخه نهایی پایدار</title>
+    <title>سینما کر | نسخه نهایی پایدار موبایل</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -16,6 +16,8 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            /* برای نوارهای سیستم */
+            padding-bottom: env(safe-area-inset-bottom);
         }
         .login {
             position: fixed;
@@ -55,9 +57,14 @@
             height: 100%;
             overflow: hidden;
         }
+        /* بخش بالایی ثابت - با sticky برای حالت فول اسکرین */
         .top-fixed {
             flex-shrink: 0;
             background: #0b141a;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            min-height: 35vh;
         }
         video {
             width: 100%;
@@ -207,6 +214,8 @@
             flex-direction: column;
             gap: 6px;
             flex-shrink: 0;
+            /* فاصله از نوار پایین سیستم */
+            margin-bottom: env(safe-area-inset-bottom);
         }
         .reply-preview {
             background: #0b141a;
@@ -243,6 +252,15 @@
         @media (max-width: 400px) {
             button, select, label { padding: 4px 10px; font-size: 11px; }
             .time { font-size: 10px; }
+        }
+        /* حالت تمام صفحه: اطمینان از ثابت ماندن بالایی */
+        :-webkit-full-screen .top-fixed {
+            position: sticky;
+            top: 0;
+        }
+        :fullscreen .top-fixed {
+            position: sticky;
+            top: 0;
         }
     </style>
 </head>
@@ -334,7 +352,7 @@
         let syncLock = false;
         let lastSyncTime = 0;
         let displayedMsgSet = new Set();
-        let isPeerReady = false; // برای اطمینان از آماده بودن peer قبل از اتصال
+        let isPeerReady = false;
         
         // ====================== توابع کمکی ======================
         function escapeHtml(str) {
@@ -523,7 +541,6 @@
             });
         }
         
-        // مقداردهی اولیه Peer و MQTT
         function initPeerAndMqtt() {
             const iceServers = [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -538,7 +555,6 @@
                 isPeerReady = true;
                 statusText.innerText = `🆔 ${id.substring(0,6)}`;
                 
-                // اتصال به MQTT بعد از آماده شدن Peer
                 mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
                 mqttClient.on('connect', () => {
                     mqttClient.subscribe('cinema_final_room');
@@ -554,7 +570,6 @@
                     } catch(e) {}
                 });
                 
-                // بارگذاری ویدیو
                 video.src = VIDEO_URL;
                 video.load();
             });
@@ -636,8 +651,18 @@
         });
         
         fullscreenBtn.addEventListener('click', () => {
-            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-            else document.exitFullscreen();
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        });
+        
+        // در حالت فول اسکرین، اطمینان از ثابت ماندن بالایی
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                // هیچ اقدام خاصی نیاز نیست، CSS کار می‌کند
+            }
         });
         
         fileUpload.addEventListener('change', (e) => {
