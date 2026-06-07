@@ -3,18 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | ریپلای کامل + پیام‌رسانی پایدار</title>
+    <title>CinemaCore Pro | نسخه نهایی با ریپلای حرفه‌ای</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body { height: 100%; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
         :root {
-            --bg: #0b141a; --panel: #1e2a32; --accent: #00a884;
-            --text: #e9edef; --input-bg: #2a3942;
+            --bg: #0b141a;
+            --panel: #1e2a32;
+            --accent: #00a884;
+            --text: #e9edef;
+            --input-bg: #2a3942;
         }
         body {
-            background: var(--bg); color: var(--text);
+            background: var(--bg);
+            color: var(--text);
             font-family: 'Segoe UI', Tahoma, sans-serif;
             display: flex;
             flex-direction: column;
@@ -23,20 +37,44 @@
             font-size: 14px;
         }
         #login-overlay {
-            position: fixed; top:0; left:0; right:0; bottom:0;
-            background: var(--bg); display: flex;
-            flex-direction: column; align-items: center; justify-content: center;
-            z-index: 100; padding: 20px; gap: 12px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 20px;
+            gap: 12px;
         }
-        #login-overlay h2 { color: var(--accent); font-size: 20px; }
+        #login-overlay h2 {
+            color: var(--accent);
+            font-size: 20px;
+        }
         #login-overlay input {
-            padding: 10px 14px; border-radius: 25px; border: none;
-            background: var(--input-bg); color: var(--text); font-size: 15px;
-            width: 100%; max-width: 240px; text-align: center; outline: none;
+            padding: 10px 14px;
+            border-radius: 25px;
+            border: none;
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 15px;
+            width: 100%;
+            max-width: 240px;
+            text-align: center;
+            outline: none;
         }
         #login-overlay button {
-            padding: 10px 24px; border-radius: 25px; border: none;
-            background: var(--accent); color: #fff; font-size: 15px; font-weight: bold;
+            padding: 10px 24px;
+            border-radius: 25px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-size: 15px;
+            font-weight: bold;
             cursor: pointer;
         }
         #main-app {
@@ -46,13 +84,16 @@
             width: 100%;
             overflow: hidden;
         }
+        /* بخش بالایی ثابت */
+        .fixed-top {
+            flex-shrink: 0;
+        }
         .player-container {
             background: #000;
             width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-shrink: 0;
             max-height: 35vh;
         }
         video {
@@ -67,7 +108,6 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            flex-shrink: 0;
             border-bottom: 1px solid #2f3b44;
         }
         .time-display {
@@ -102,7 +142,6 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 4px;
-            flex-shrink: 0;
             border-bottom: 1px solid #2f3b44;
         }
         .btn {
@@ -120,9 +159,19 @@
             padding: 0 12px;
             transition: 0.2s;
         }
-        .btn:active { background: #3b4a54; }
-        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
-        .btn.icon { padding: 0; width: 36px; font-size: 18px; }
+        .btn:active {
+            background: #3b4a54;
+        }
+        .btn.accent {
+            background: var(--accent);
+            color: #fff;
+            font-weight: bold;
+        }
+        .btn.icon {
+            padding: 0;
+            width: 36px;
+            font-size: 18px;
+        }
         select.btn {
             appearance: none;
             background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
@@ -153,7 +202,9 @@
             font-weight: bold;
             cursor: pointer;
         }
-        #file-uploader { display: none; }
+        #file-uploader {
+            display: none;
+        }
         .users-bar {
             background: var(--panel);
             padding: 2px 8px;
@@ -161,7 +212,6 @@
             display: flex;
             gap: 4px;
             flex-wrap: wrap;
-            flex-shrink: 0;
             border-bottom: 1px solid #2f3b44;
         }
         .user-chip {
@@ -172,6 +222,7 @@
             align-items: center;
             gap: 3px;
         }
+        /* بخش چت (اسکرول‌شونده) */
         .chat-area {
             flex: 1;
             display: flex;
@@ -195,6 +246,7 @@
             font-size: 13px;
             line-height: 1.3;
             color: white;
+            position: relative;
         }
         .msg-self {
             align-self: flex-end;
@@ -203,33 +255,45 @@
         }
         .msg-other {
             align-self: flex-start;
+            background-color: #2a3942;
             border-bottom-right-radius: 6px;
+        }
+        /* استایل ریپلای داخل پیام */
+        .reply-preview {
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 3px 8px;
+            border-radius: 12px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border-right: 2px solid var(--accent);
+        }
+        .reply-preview span {
+            opacity: 0.8;
         }
         .msg-info {
             font-size: 9px;
-            opacity: 0.8;
+            opacity: 0.7;
             margin-top: 2px;
             display: flex;
-            gap: 6px;
+            gap: 8px;
             align-items: center;
             flex-wrap: wrap;
         }
-        .reply-indicator {
-            font-size: 10px;
-            background: rgba(0,0,0,0.3);
-            padding: 2px 6px;
-            border-radius: 10px;
-            margin-bottom: 4px;
-            display: inline-block;
-        }
         .reply-badge {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.15);
             border-radius: 12px;
             padding: 2px 8px;
             font-size: 10px;
-            margin-right: 8px;
             cursor: pointer;
+            transition: 0.2s;
         }
+        .reply-badge:active {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        /* نوار ورودی پیام با نمایش ریپلای */
         .input-area {
             padding: 6px 8px;
             background: var(--panel);
@@ -237,6 +301,39 @@
             gap: 6px;
             align-items: center;
             flex-shrink: 0;
+            flex-direction: column;
+        }
+        .reply-input-preview {
+            width: 100%;
+            background: #0b141a;
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .reply-input-preview span {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            opacity: 0.7;
+        }
+        .cancel-reply {
+            background: none;
+            border: none;
+            color: var(--accent);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .input-row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
         }
         #msg-input {
             flex: 1;
@@ -259,10 +356,26 @@
             cursor: pointer;
         }
         @media (max-width: 350px) {
-            .btn { min-width: 32px; height: 32px; font-size: 11px; padding: 0 6px; }
-            .file-label { padding: 0 10px; font-size: 12px; height: 32px; }
-            .time-display { font-size: 9px; min-width: 45px; }
-            #send-btn { padding: 0 12px; height: 32px; font-size: 12px; }
+            .btn {
+                min-width: 32px;
+                height: 32px;
+                font-size: 11px;
+                padding: 0 6px;
+            }
+            .file-label {
+                padding: 0 10px;
+                font-size: 12px;
+                height: 32px;
+            }
+            .time-display {
+                font-size: 9px;
+                min-width: 45px;
+            }
+            #send-btn {
+                padding: 0 12px;
+                height: 32px;
+                font-size: 12px;
+            }
         }
     </style>
 </head>
@@ -275,47 +388,53 @@
 </div>
 
 <div id="main-app">
-    <div class="player-container">
-        <video id="player" playsinline crossorigin="anonymous"></video>
+    <div class="fixed-top">
+        <div class="player-container">
+            <video id="player" playsinline crossorigin="anonymous"></video>
+        </div>
+        <div class="progress-row">
+            <span class="time-display" id="current-time">00:00</span>
+            <input type="range" id="seek-bar" class="seek-slider" value="0" step="0.01">
+            <span class="time-display" id="duration">00:00</span>
+            <button id="fullscreen-btn" class="btn icon" style="min-width:32px; width:32px;">⤢</button>
+        </div>
+        <div class="controls-row">
+            <button id="btn-play" class="btn icon">▶️</button>
+            <button id="btn-pause" class="btn icon">⏸️</button>
+            <select id="speed-select" class="btn">
+                <option value="0.5">0.5x</option><option value="0.75">0.75x</option>
+                <option value="1" selected>1x</option><option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option><option value="2">2x</option>
+            </select>
+            <label class="file-label" for="file-uploader">📁</label>
+            <input type="file" id="file-uploader" accept="video/*">
+            <span id="status-tag">📡 در حال اتصال...</span>
+        </div>
+        <div class="users-bar" id="users-bar"></div>
     </div>
-
-    <div class="progress-row">
-        <span class="time-display" id="current-time">00:00</span>
-        <input type="range" id="seek-bar" class="seek-slider" value="0" step="0.01">
-        <span class="time-display" id="duration">00:00</span>
-        <button id="fullscreen-btn" class="btn icon" style="min-width:32px; width:32px;">⤢</button>
-    </div>
-
-    <div class="controls-row">
-        <button id="btn-play" class="btn icon">▶️</button>
-        <button id="btn-pause" class="btn icon">⏸️</button>
-        <select id="speed-select" class="btn">
-            <option value="0.5">0.5x</option><option value="0.75">0.75x</option>
-            <option value="1" selected>1x</option><option value="1.25">1.25x</option>
-            <option value="1.5">1.5x</option><option value="2">2x</option>
-        </select>
-        <label class="file-label" for="file-uploader">📁</label>
-        <input type="file" id="file-uploader" accept="video/*">
-        <span id="status-tag">📡 در حال اتصال...</span>
-    </div>
-
-    <div class="users-bar" id="users-bar"></div>
 
     <div class="chat-area">
         <div id="messages" class="messages"></div>
-        <div class="input-area">
-            <input type="text" id="msg-input" placeholder="پیام..." autocomplete="off">
-            <button id="send-btn">ارسال</button>
+        <div class="input-area" id="input-area">
+            <div id="reply-preview" class="reply-input-preview" style="display: none;">
+                <span id="reply-preview-text">پاسخ به ...</span>
+                <button id="cancel-reply" class="cancel-reply">✖</button>
+            </div>
+            <div class="input-row">
+                <input type="text" id="msg-input" placeholder="پیام..." autocomplete="off">
+                <button id="send-btn">ارسال</button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
 (function(){
+    // ---------- تنظیمات اولیه ----------
     const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
     const MAX_PEERS = 8;
 
-    // DOM elements
+    // ---------- عناصر DOM ----------
     const loginOverlay = document.getElementById('login-overlay');
     const nameInput = document.getElementById('name-input');
     const btnLogin = document.getElementById('btn-login');
@@ -334,17 +453,22 @@
     const durationSpan = document.getElementById('duration');
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     const fileUploader = document.getElementById('file-uploader');
+    const replyPreviewDiv = document.getElementById('reply-preview');
+    const replyPreviewText = document.getElementById('reply-preview-text');
+    const cancelReplyBtn = document.getElementById('cancel-reply');
 
+    // ---------- متغیرهای سراسری ----------
     let myName = '';
     let myPeerId = null;
     let mqttClient = null;
+    let peer = null;
     let connectedPeers = new Map(); // peerId -> { conn, name, outSeq }
     let videoSync = null;
     let isSeeking = false;
     let rafId = null;
-    let pendingReply = null; // { peerId, seq, text }
+    let currentReply = null; // { peerId, seq, text }
 
-    // ====================== توابع کمکی ======================
+    // ---------- توابع کمکی ----------
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -388,6 +512,7 @@
         usersBar.innerHTML = html;
     }
 
+    // نمایش پیام جدید در چت (با قابلیت ریپلای)
     function displayMessage(peerId, seq, text, senderName, isSelf, replyToSeq = null, replyText = null) {
         const msgKey = `${peerId}:${seq}`;
         if (document.querySelector(`.chat-message[data-msg-key="${msgKey}"]`)) return;
@@ -396,14 +521,16 @@
         div.className = `chat-message ${isSelf ? 'msg-self' : 'msg-other'}`;
         if (!isSelf && peerId) {
             div.style.backgroundColor = stringToColor(peerId);
-        } else if (!isSelf) {
-            div.style.backgroundColor = '#555';
         }
         div.setAttribute('data-msg-key', msgKey);
 
         let content = '';
+        // نمایش ریپلای داخل پیام
         if (replyToSeq && replyText) {
-            content += `<div class="reply-indicator">↪️ پاسخ به #${replyToSeq}: ${escapeHtml(replyText.substring(0, 50))}</div>`;
+            content += `<div class="reply-preview">
+                            <span>↪️ پاسخ به ${escapeHtml(senderName)}: </span>
+                            <span>${escapeHtml(replyText.substring(0, 60))}</span>
+                        </div>`;
         }
         content += `<div>${escapeHtml(text)}</div>`;
         content += `<div class="msg-info">
@@ -413,16 +540,23 @@
                     </div>`;
         div.innerHTML = content;
 
+        // رویداد کلیک روی دکمه ریپلای
         const replyBtn = div.querySelector('.reply-badge');
         replyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            pendingReply = { peerId: replyBtn.dataset.peer, seq: parseInt(replyBtn.dataset.seq), text: replyBtn.dataset.text };
-            // نمایش متن پیام اصلی در placeholder به صورت نقل قول
-            msgInput.placeholder = `پاسخ به "${pendingReply.text.substring(0, 40)}..."`;
+            // ذخیره اطلاعات پیام برای ریپلای
+            currentReply = {
+                peerId: replyBtn.dataset.peer,
+                seq: parseInt(replyBtn.dataset.seq),
+                text: replyBtn.dataset.text
+            };
+            // نمایش بخش ریپلای در بالای ورودی
+            replyPreviewText.textContent = `پاسخ به "${currentReply.text.substring(0, 50)}..."`;
+            replyPreviewDiv.style.display = 'flex';
             msgInput.focus();
         });
 
-        // درج بر اساس شماره پیام (ترتیب صعودی)
+        // درج بر اساس شماره پیام
         let inserted = false;
         const children = messagesDiv.children;
         for (let i = 0; i < children.length; i++) {
@@ -441,10 +575,9 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
-    // ====================== شبکه ساده و قابل اعتماد ======================
-    class SimplePeerNetwork {
+    // ---------- کلاس شبکه با قابلیت اطمینان ----------
+    class ReliableNetwork {
         constructor() {
-            this.peer = null;
             this.callbacks = { onData: null, onStatus: null };
         }
 
@@ -455,11 +588,20 @@
                 { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
                 { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
             ];
-            this.peer = new Peer(null, { debug: 0, config: { iceServers } });
-            this.peer.on('open', (id) => { myPeerId = id; this._emitStatus('ready', id); });
-            this.peer.on('connection', (conn) => this._handleConnection(conn));
-            this.peer.on('disconnected', () => { this._emitStatus('disconnected'); this.peer.reconnect(); });
-            this.peer.on('error', (err) => { console.error('Peer error:', err); this._emitStatus('error', err.message); });
+            peer = new Peer(null, { debug: 0, config: { iceServers } });
+            peer.on('open', (id) => {
+                myPeerId = id;
+                this._emitStatus('ready', id);
+            });
+            peer.on('connection', (conn) => this._handleConnection(conn));
+            peer.on('disconnected', () => {
+                this._emitStatus('disconnected');
+                peer.reconnect();
+            });
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                this._emitStatus('error', err.message);
+            });
         }
 
         _handleConnection(conn) {
@@ -471,15 +613,24 @@
                     name: 'در حال دریافت...',
                     outSeq: 1
                 });
-                conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
+                // ارسال اطلاعات خود به طرف مقابل
+                conn.send({
+                    type: 'HELLO',
+                    name: myName,
+                    peerId: myPeerId
+                });
                 updateUsersBar();
-                if (this.callbacks.onData) this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
+                if (this.callbacks.onData) {
+                    this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
+                }
             });
             conn.on('data', (data) => this._processIncoming(conn.peer, data));
             conn.on('close', () => {
                 const peerInfo = connectedPeers.get(conn.peer);
                 if (peerInfo) {
-                    if (this.callbacks.onData) this.callbacks.onData('system', { type: 'LEAVE', peerId: conn.peer, name: peerInfo.name });
+                    if (this.callbacks.onData) {
+                        this.callbacks.onData('system', { type: 'LEAVE', peerId: conn.peer, name: peerInfo.name });
+                    }
                     connectedPeers.delete(conn.peer);
                     updateUsersBar();
                 }
@@ -497,7 +648,7 @@
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
             else if (data.type === 'CHAT') {
-                // تحویل فوری پیام
+                // نمایش فوری پیام دریافتی
                 const isSelf = (data.senderId === myPeerId);
                 displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, data.replyText);
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
@@ -520,11 +671,11 @@
                         sender: myName,
                         senderId: myPeerId,
                         replyToSeq: payload.replyToSeq || null,
-                        replyText: payload.replyText || null,  // ارسال متن اصلی برای نمایش
+                        replyText: payload.replyText || null,
                         timestamp: Date.now()
                     };
                     conn.send(message);
-                    // نمایش پیام خودمان با همان replyText
+                    // نمایش پیام خودمان
                     displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, payload.replyText);
                 } else {
                     conn.send({ type, ...payload });
@@ -538,16 +689,17 @@
                 this._emitStatus('error', 'حداکثر تعداد همتایان پر شده است');
                 return;
             }
-            this.peer.connect(remoteId, { reliable: true });
+            const newConn = peer.connect(remoteId, { reliable: true });
+            // رویدادهای اتصال در this._handleConnection مدیریت می‌شوند
         }
 
         onData(cb) { this.callbacks.onData = cb; }
         onStatus(cb) { this.callbacks.onStatus = cb; }
         _emitStatus(type, detail) { if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() }); }
-        destroy() { if (this.peer) this.peer.destroy(); }
+        destroy() { if (peer) peer.destroy(); }
     }
 
-    // ====================== موتور همگام‌سازی ویدئو ======================
+    // ---------- موتور همگام‌سازی ویدئو ----------
     class VideoSyncEngine {
         constructor(player, network) {
             this.player = player;
@@ -645,24 +797,32 @@
         destroy() {}
     }
 
-    // ====================== راه‌اندازی اصلی ======================
-    const network = new SimplePeerNetwork();
+    // ---------- راه‌اندازی اصلی ----------
+    const network = new ReliableNetwork();
 
     function sendChatMessage() {
         let text = msgInput.value.trim();
         if (!text) return;
         let replyToSeq = null;
         let replyText = null;
-        if (pendingReply) {
-            replyToSeq = pendingReply.seq;
-            replyText = pendingReply.text;
-            pendingReply = null;
-            msgInput.placeholder = 'پیام...';
+        if (currentReply) {
+            replyToSeq = currentReply.seq;
+            replyText = currentReply.text;
+            // ریست کردن وضعیت ریپلای
+            currentReply = null;
+            replyPreviewDiv.style.display = 'none';
         }
         network.sendToAll('CHAT', { text, replyToSeq, replyText });
         msgInput.value = '';
     }
 
+    // لغو ریپلای
+    function cancelReply() {
+        currentReply = null;
+        replyPreviewDiv.style.display = 'none';
+    }
+
+    // رویداد ورود کاربر
     btnLogin.addEventListener('click', () => {
         let rawName = nameInput.value.trim();
         if (!rawName) return alert('لطفاً نام خود را وارد کنید');
@@ -675,6 +835,7 @@
         network.onStatus((status) => {
             if (status.type === 'ready') {
                 statusTag.textContent = `🆔 ${status.detail.substring(0,6)}`;
+                // اتصال به MQTT
                 mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
                 mqttClient.on('connect', () => {
                     mqttClient.subscribe('cinema_mesh_room_pro');
@@ -688,11 +849,13 @@
                         }
                     } catch(e) {}
                 });
+                // بارگذاری ویدئوی پیش‌فرض
                 if (player._blobUrl) URL.revokeObjectURL(player._blobUrl);
                 player.src = DEFAULT_VIDEO_URL;
                 player.load();
             } else if (status.type === 'error') {
                 statusTag.textContent = `⚠️ خطا: ${status.detail}`;
+                console.error(status.detail);
             }
         });
 
@@ -727,8 +890,10 @@
         videoSync = new VideoSyncEngine(player, network);
     });
 
+    // رویدادهای UI
     sendBtn.addEventListener('click', sendChatMessage);
     msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+    cancelReplyBtn.addEventListener('click', cancelReply);
     btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
     btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
     speedSelect.addEventListener('change', () => { if(videoSync) videoSync.setPlaybackRate(parseFloat(speedSelect.value)); });
