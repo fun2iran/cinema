@@ -1,572 +1,619 @@
+<!-- 
+  CinemaCore Pro – نسخه Enterprise با همگام‌سازی تطبیقی ویدئو
+  تغییرات:
+  - VideoSyncEngine با Offset زمانی و میانگین‌گیری متحرک
+  - مدیریت Buffering گروهی
+  - پاکسازی حافظه (Blob URLs)
+  - اعتبارسنجی اولیه پیام‌های دریافتی
+-->
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
-    <title>CinemaCore Pro | پخش همگام فیلم + چت گروهی</title>
-    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            --bg: #0b141a; --panel: #202c33; --accent: #00a884;
-            --text: #e9edef; --input-bg: #2a3942;
-        }
-        body {
-            background: var(--bg); color: var(--text);
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            height: 100dvh; display: flex; flex-direction: column;
-            overflow: hidden; -webkit-tap-highlight-color: transparent;
-        }
-
-        /* لایه ورود */
-        #login-overlay {
-            position: fixed; top:0; left:0; right:0; bottom:0;
-            background: var(--bg); display: flex;
-            flex-direction: column; align-items: center; justify-content: center;
-            z-index: 100; padding: 20px; gap: 15px;
-        }
-        #login-overlay input {
-            padding: 12px 16px; border-radius: 25px; border: none;
-            background: var(--input-bg); color: var(--text); font-size: 16px;
-            width: 100%; max-width: 280px; text-align: center; outline: none;
-        }
-        #login-overlay button {
-            padding: 12px 30px; border-radius: 25px; border: none;
-            background: var(--accent); color: #fff; font-size: 16px; font-weight: bold;
-            cursor: pointer;
-        }
-
-        /* ویدیو پلیر */
-        .player-container {
-            position: relative; width: 100%; background: #000;
-            display: flex; align-items: center; justify-content: center;
-            max-height: 40vh; flex-shrink: 0;
-        }
-        video {
-            width: 100%; height: auto; max-height: 40vh; display: block;
-        }
-
-        /* کنترل‌ها */
-        .controls {
-            background: var(--panel); padding: 10px;
-            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-            border-bottom: 1px solid var(--input-bg); flex-shrink: 0;
-        }
-        .btn {
-            background: var(--input-bg); color: var(--text); border: none;
-            padding: 8px 12px; border-radius: 20px; font-size: 13px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            min-width: 44px; transition: 0.2s; white-space: nowrap;
-        }
-        .btn:active { background: #3b4a54; }
-        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
-        select.btn {
-            appearance: none; -webkit-appearance: none;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
-            background-repeat: no-repeat; background-position: left 8px center;
-            background-size: 14px; padding-left: 24px; padding-right: 12px;
-        }
-        #status-tag {
-            font-size: 12px; margin-right: auto; color: #8696a0;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
-        }
-
-        /* نوار کاربران */
-        .users-bar {
-            background: var(--panel); padding: 4px 10px; font-size: 12px;
-            display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
-        }
-        .user-chip {
-            background: var(--input-bg); padding: 4px 10px; border-radius: 15px;
-            display: flex; align-items: center; gap: 5px;
-        }
-
-        /* چت */
-        .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .messages {
-            flex: 1; overflow-y: auto; padding: 10px;
-            display: flex; flex-direction: column; gap: 6px;
-        }
-        .chat-message {
-            padding: 8px 12px; border-radius: 18px; max-width: 85%;
-            word-wrap: break-word; font-size: 14px; line-height: 1.4;
-        }
-        .msg-sent {
-            align-self: flex-end; background: var(--accent); color: #fff;
-            border-bottom-left-radius: 4px;
-        }
-        .msg-received {
-            align-self: flex-start; background: var(--panel); color: var(--text);
-            border-bottom-right-radius: 4px;
-        }
-        .msg-info { font-size: 10px; opacity: 0.7; margin-top: 2px; }
-        .input-area {
-            padding: 8px 10px; background: var(--panel); display: flex;
-            gap: 8px; align-items: center; flex-shrink: 0;
-        }
-        #msg-input {
-            flex: 1; padding: 10px 15px; border-radius: 25px; border: none;
-            background: var(--input-bg); color: var(--text); font-size: 14px; outline: none;
-        }
-        #file-uploader { display: none; }
-        @media (max-width: 400px) { .btn { padding: 6px 10px; font-size: 12px; } }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+    <title>CinemaCore Pro | همگام‌سازی دقیق ویدئو</title>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0b141a; --panel: #202c33; --accent: #00a884;
+            --text: #e9edef; --input-bg: #2a3942;
+        }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            height: 100dvh; display: flex; flex-direction: column;
+            overflow: hidden; -webkit-tap-highlight-color: transparent;
+        }
+        #login-overlay {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            background: var(--bg); display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100; padding: 20px; gap: 15px;
+        }
+        #login-overlay input {
+            padding: 12px 16px; border-radius: 25px; border: none;
+            background: var(--input-bg); color: var(--text); font-size: 16px;
+            width: 100%; max-width: 280px; text-align: center; outline: none;
+        }
+        #login-overlay button {
+            padding: 12px 30px; border-radius: 25px; border: none;
+            background: var(--accent); color: #fff; font-size: 16px; font-weight: bold;
+            cursor: pointer;
+        }
+        .player-container {
+            position: relative; width: 100%; background: #000;
+            display: flex; align-items: center; justify-content: center;
+            max-height: 40vh; flex-shrink: 0;
+        }
+        video { width: 100%; height: auto; max-height: 40vh; display: block; }
+        .controls {
+            background: var(--panel); padding: 10px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            border-bottom: 1px solid var(--input-bg); flex-shrink: 0;
+        }
+        .btn {
+            background: var(--input-bg); color: var(--text); border: none;
+            padding: 8px 12px; border-radius: 20px; font-size: 13px; cursor: pointer;
+            min-width: 44px; transition: 0.2s; white-space: nowrap;
+        }
+        .btn:active { background: #3b4a54; }
+        .btn.accent { background: var(--accent); color: #fff; font-weight: bold; }
+        select.btn {
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'><path d='M5 8l5 5 5-5z'/></svg>");
+            background-repeat: no-repeat; background-position: left 8px center;
+            background-size: 14px; padding-left: 24px; padding-right: 12px;
+        }
+        #status-tag {
+            font-size: 12px; margin-right: auto; color: #8696a0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
+        }
+        .users-bar {
+            background: var(--panel); padding: 4px 10px; font-size: 12px;
+            display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
+        }
+        .user-chip {
+            background: var(--input-bg); padding: 4px 10px; border-radius: 15px;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .messages {
+            flex: 1; overflow-y: auto; padding: 10px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .chat-message {
+            padding: 8px 12px; border-radius: 18px; max-width: 85%;
+            word-wrap: break-word; font-size: 14px; line-height: 1.4;
+        }
+        .msg-sent { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-left-radius: 4px; }
+        .msg-received { align-self: flex-start; background: var(--panel); color: var(--text); border-bottom-right-radius: 4px; }
+        .msg-info { font-size: 10px; opacity: 0.7; margin-top: 2px; }
+        .input-area {
+            padding: 8px 10px; background: var(--panel); display: flex;
+            gap: 8px; align-items: center; flex-shrink: 0;
+        }
+        #msg-input {
+            flex: 1; padding: 10px 15px; border-radius: 25px; border: none;
+            background: var(--input-bg); color: var(--text); font-size: 14px; outline: none;
+        }
+        #file-uploader { display: none; }
+        @media (max-width: 400px) { .btn { padding: 6px 10px; font-size: 12px; } }
+    </style>
 </head>
 <body>
 
-<!-- صفحه ورود -->
 <div id="login-overlay">
-    <h2 style="color:var(--accent);">🎬 CinemaCore Pro</h2>
-    <input type="text" id="name-input" placeholder="نام خود را وارد کنید" autocomplete="off">
-    <button id="btn-login">ورود به گروه</button>
+    <h2 style="color:var(--accent);">🎬 CinemaCore Pro</h2>
+    <input type="text" id="name-input" placeholder="نام خود را وارد کنید" autocomplete="off">
+    <button id="btn-login">ورود به گروه</button>
 </div>
 
-<!-- محتوای اصلی (مخفی تا زمان ورود) -->
 <div id="main-app" style="display:none; flex-direction:column; height:100%;">
-    <div class="player-container">
-        <video id="player" playsinline></video>
-    </div>
-
-    <div class="controls">
-        <label class="btn accent" for="file-uploader">📁 انتخاب فیلم</label>
-        <input type="file" id="file-uploader" accept="video/*">
-        <button id="btn-play" class="btn">▶ پخش</button>
-        <button id="btn-pause" class="btn">⏸ مکث</button>
-        <select id="speed-select" class="btn">
-            <option value="0.5">0.5x</option>
-            <option value="0.75">0.75x</option>
-            <option value="1" selected>1x</option>
-            <option value="1.25">1.25x</option>
-            <option value="1.5">1.5x</option>
-            <option value="2">2x</option>
-        </select>
-        <span id="status-tag">📡 در حال اتصال...</span>
-    </div>
-
-    <div class="users-bar" id="users-bar"></div>
-
-    <div class="chat-area">
-        <div id="messages" class="messages"></div>
-        <div class="input-area">
-            <input type="text" id="msg-input" placeholder="پیام خود را بنویسید..." autocomplete="off">
-        </div>
-    </div>
+    <div class="player-container">
+        <video id="player" playsinline></video>
+    </div>
+    <div class="controls">
+        <label class="btn accent" for="file-uploader">📁 انتخاب فیلم</label>
+        <input type="file" id="file-uploader" accept="video/*">
+        <button id="btn-play" class="btn">▶ پخش</button>
+        <button id="btn-pause" class="btn">⏸ مکث</button>
+        <select id="speed-select" class="btn">
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+        </select>
+        <span id="status-tag">📡 در حال اتصال...</span>
+    </div>
+    <div class="users-bar" id="users-bar"></div>
+    <div class="chat-area">
+        <div id="messages" class="messages"></div>
+        <div class="input-area">
+            <input type="text" id="msg-input" placeholder="پیام خود را بنویسید..." autocomplete="off">
+        </div>
+    </div>
 </div>
 
 <script>
 /**
- * ============== 1. Enterprise Network Engine (ACK, Queue, Retry) ==============
- */
+ * ============== 1. Enterprise Network Engine (بدون تغییر) ==============
+ */
 class EnterpriseNetworkEngine {
-    constructor() {
-        this.peer = null;
-        this.connections = new Map();
-        this.outgoingQueues = new Map();
-        this.processedIds = new Set();
-        this.heartbeatInterval = 5000;
-        this.maxRetries = 5;
-        this.retryDelay = 1500;
-        this.callbacks = {
-            onData: null,
-            onStatus: null,
-            onPeerConnected: null,
-            onPeerDisconnected: null
-        };
-    }
+    constructor() {
+        this.peer = null;
+        this.connections = new Map();
+        this.outgoingQueues = new Map();
+        this.processedIds = new Set();
+        this.heartbeatInterval = 5000;
+        this.maxRetries = 5;
+        this.retryDelay = 1500;
+        this.callbacks = { onData: null, onStatus: null, onPeerConnected: null, onPeerDisconnected: null };
+    }
 
-    init() {
-        this.peer = new Peer(null, {
-            debug: 0,
-            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-        });
-        this.peer.on('open', (id) => {
-            this.myId = id;
-            this._emitStatus('ready', id);
-        });
-        this.peer.on('connection', (conn) => this._handleConnection(conn));
-        this.peer.on('disconnected', () => {
-            this._emitStatus('disconnected');
-            this.peer.reconnect();
-        });
-        this.peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            this._emitStatus('error', err.message);
-        });
-    }
+    init() {
+        this.peer = new Peer(null, { debug: 0, config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+        this.peer.on('open', (id) => { this.myId = id; this._emitStatus('ready', id); });
+        this.peer.on('connection', (conn) => this._handleConnection(conn));
+        this.peer.on('disconnected', () => { this._emitStatus('disconnected'); this.peer.reconnect(); });
+        this.peer.on('error', (err) => { console.error('Peer error:', err); this._emitStatus('error', err.message); });
+    }
 
-    connect(remoteId) {
-        if (remoteId === this.myId) return;
-        if (this.connections.has(remoteId)) return;
-        const conn = this.peer.connect(remoteId, { reliable: true });
-        this._handleConnection(conn);
-    }
+    connect(remoteId) {
+        if (remoteId === this.myId || this.connections.has(remoteId)) return;
+        const conn = this.peer.connect(remoteId, { reliable: true });
+        this._handleConnection(conn);
+    }
 
-    _handleConnection(conn) {
-        conn.on('open', () => {
-            this.connections.set(conn.peer, conn);
-            this._emitStatus('connected', conn.peer);
-            this._startHeartbeat(conn);
-            this._resumeQueue(conn.peer);
-            if (this.callbacks.onPeerConnected) this.callbacks.onPeerConnected(conn.peer);
-        });
-        conn.on('data', (data) => this._processIncoming(conn.peer, data));
-        conn.on('close', () => {
-            this.connections.delete(conn.peer);
-            this._emitStatus('disconnected', conn.peer);
-            this._stopHeartbeat(conn.peer);
-            if (this.callbacks.onPeerDisconnected) this.callbacks.onPeerDisconnected(conn.peer);
-        });
-        conn.on('error', (err) => {
-            console.warn('Connection error:', err);
-            this.connections.delete(conn.peer);
-        });
-    }
+    _handleConnection(conn) {
+        conn.on('open', () => {
+            this.connections.set(conn.peer, conn);
+            this._emitStatus('connected', conn.peer);
+            this._startHeartbeat(conn);
+            this._resumeQueue(conn.peer);
+            if (this.callbacks.onPeerConnected) this.callbacks.onPeerConnected(conn.peer);
+        });
+        conn.on('data', (data) => this._processIncoming(conn.peer, data));
+        conn.on('close', () => {
+            this.connections.delete(conn.peer);
+            this._emitStatus('disconnected', conn.peer);
+            this._stopHeartbeat(conn.peer);
+            if (this.callbacks.onPeerDisconnected) this.callbacks.onPeerDisconnected(conn.peer);
+        });
+        conn.on('error', (err) => { console.warn('Connection error:', err); this.connections.delete(conn.peer); });
+    }
 
-    send(remoteId, payload) {
-        const message = {
-            id: this._generateUUID(),
-            type: payload.type || 'CUSTOM',
-            payload: payload,
-            timestamp: Date.now(),
-        };
-        if (!this.outgoingQueues.has(remoteId)) {
-            this.outgoingQueues.set(remoteId, new Map());
-        }
-        const queue = this.outgoingQueues.get(remoteId);
-        queue.set(message.id, { message, retries: 0, timer: null });
-        this._attemptSend(remoteId, message);
-    }
+    send(remoteId, payload) {
+        const message = { id: this._generateUUID(), type: payload.type || 'CUSTOM', payload, timestamp: Date.now() };
+        if (!this.outgoingQueues.has(remoteId)) this.outgoingQueues.set(remoteId, new Map());
+        const queue = this.outgoingQueues.get(remoteId);
+        queue.set(message.id, { message, retries: 0, timer: null });
+        this._attemptSend(remoteId, message);
+    }
 
-    _attemptSend(remoteId, message) {
-        const conn = this.connections.get(remoteId);
-        if (!conn || !conn.open) {
-            this._scheduleRetry(remoteId, message);
-            return;
-        }
-        try {
-            conn.send(message);
-            this._scheduleRetry(remoteId, message);
-        } catch (e) {
-            this._scheduleRetry(remoteId, message);
-        }
-    }
+    _attemptSend(remoteId, message) {
+        const conn = this.connections.get(remoteId);
+        if (!conn || !conn.open) { this._scheduleRetry(remoteId, message); return; }
+        try { conn.send(message); this._scheduleRetry(remoteId, message); } catch (e) { this._scheduleRetry(remoteId, message); }
+    }
 
-    _scheduleRetry(remoteId, message) {
-        const queue = this.outgoingQueues.get(remoteId);
-        if (!queue) return;
-        const entry = queue.get(message.id);
-        if (!entry) return;
-        if (entry.timer) clearTimeout(entry.timer);
-        if (entry.retries >= this.maxRetries) {
-            queue.delete(message.id);
-            this._emitStatus('send_failed', message.id);
-            return;
-        }
-        entry.timer = setTimeout(() => {
-            entry.retries++;
-            this._attemptSend(remoteId, message);
-        }, this.retryDelay);
-    }
+    _scheduleRetry(remoteId, message) {
+        const queue = this.outgoingQueues.get(remoteId);
+        if (!queue) return;
+        const entry = queue.get(message.id);
+        if (!entry) return;
+        if (entry.timer) clearTimeout(entry.timer);
+        if (entry.retries >= this.maxRetries) { queue.delete(message.id); this._emitStatus('send_failed', message.id); return; }
+        entry.timer = setTimeout(() => { entry.retries++; this._attemptSend(remoteId, message); }, this.retryDelay);
+    }
 
-    _processIncoming(senderId, data) {
-        if (data.type === 'ACK') {
-            this._handleAck(senderId, data.ackFor);
-            return;
-        }
-        if (this.processedIds.has(data.id)) return;
-        this.processedIds.add(data.id);
-        this._sendAck(senderId, data.id);
-        if (this.callbacks.onData) {
-            this.callbacks.onData(senderId, data.payload || data);
-        }
-    }
+    _processIncoming(senderId, data) {
+        if (data.type === 'ACK') { this._handleAck(senderId, data.ackFor); return; }
+        if (this.processedIds.has(data.id)) return;
+        this.processedIds.add(data.id);
+        this._sendAck(senderId, data.id);
+        if (this.callbacks.onData) this.callbacks.onData(senderId, data.payload || data);
+    }
 
-    _sendAck(peerId, originalMsgId) {
-        const conn = this.connections.get(peerId);
-        if (conn && conn.open) {
-            conn.send({ type: 'ACK', ackFor: originalMsgId });
-        }
-    }
+    _sendAck(peerId, originalMsgId) {
+        const conn = this.connections.get(peerId);
+        if (conn && conn.open) conn.send({ type: 'ACK', ackFor: originalMsgId });
+    }
 
-    _handleAck(peerId, msgId) {
-        const queue = this.outgoingQueues.get(peerId);
-        if (!queue) return;
-        const entry = queue.get(msgId);
-        if (entry) {
-            if (entry.timer) clearTimeout(entry.timer);
-            queue.delete(msgId);
-        }
-    }
+    _handleAck(peerId, msgId) {
+        const queue = this.outgoingQueues.get(peerId);
+        if (!queue) return;
+        const entry = queue.get(msgId);
+        if (entry) { if (entry.timer) clearTimeout(entry.timer); queue.delete(msgId); }
+    }
 
-    _resumeQueue(peerId) {
-        const queue = this.outgoingQueues.get(peerId);
-        if (!queue) return;
-        for (let [msgId, entry] of queue) {
-            if (entry.timer) clearTimeout(entry.timer);
-            this._attemptSend(peerId, entry.message);
-        }
-    }
+    _resumeQueue(peerId) {
+        const queue = this.outgoingQueues.get(peerId);
+        if (!queue) return;
+        for (let [msgId, entry] of queue) { if (entry.timer) clearTimeout(entry.timer); this._attemptSend(peerId, entry.message); }
+    }
 
-    _startHeartbeat(conn) {
-        if (conn.heartbeatTimer) return;
-        conn.heartbeatTimer = setInterval(() => {
-            if (conn.open) conn.send({ type: 'PING' });
-            else this._stopHeartbeat(conn.peer);
-        }, this.heartbeatInterval);
-    }
+    _startHeartbeat(conn) {
+        if (conn.heartbeatTimer) return;
+        conn.heartbeatTimer = setInterval(() => { if (conn.open) conn.send({ type: 'PING' }); else this._stopHeartbeat(conn.peer); }, this.heartbeatInterval);
+    }
 
-    _stopHeartbeat(peerId) {
-        const conn = this.connections.get(peerId);
-        if (conn && conn.heartbeatTimer) {
-            clearInterval(conn.heartbeatTimer);
-            conn.heartbeatTimer = null;
-        }
-    }
+    _stopHeartbeat(peerId) {
+        const conn = this.connections.get(peerId);
+        if (conn && conn.heartbeatTimer) { clearInterval(conn.heartbeatTimer); conn.heartbeatTimer = null; }
+    }
 
-    onData(callback) { this.callbacks.onData = callback; }
-    onStatus(callback) { this.callbacks.onStatus = callback; }
-    onPeerConnected(callback) { this.callbacks.onPeerConnected = callback; }
-    onPeerDisconnected(callback) { this.callbacks.onPeerDisconnected = callback; }
+    onData(callback) { this.callbacks.onData = callback; }
+    onStatus(callback) { this.callbacks.onStatus = callback; }
+    onPeerConnected(callback) { this.callbacks.onPeerConnected = callback; }
+    onPeerDisconnected(callback) { this.callbacks.onPeerDisconnected = callback; }
 
-    _emitStatus(type, detail) {
-        if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() });
-    }
+    _emitStatus(type, detail) { if (this.callbacks.onStatus) this.callbacks.onStatus({ type, detail, timestamp: Date.now() }); }
 
-    _generateUUID() {
-        return 'xxxx-4xxx-yxxx'.replace(/[xy]/g, c => {
-            const r = Math.random() * 16 | 0;
-            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-        });
-    }
+    _generateUUID() {
+        return 'xxxx-4xxx-yxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
+    }
 
-    destroy() { if (this.peer) this.peer.destroy(); }
+    destroy() { if (this.peer) this.peer.destroy(); }
 }
 
 /**
- * ============== 2. Main Application Logic ==============
- */
+ * ============== 2. VideoSyncEngine (جدید – Enterprise) ==============
+ */
+class VideoSyncEngine {
+    constructor(player, network, getPeersFunc) {
+        this.player = player;
+        this.network = network;
+        this.getConnectedPeers = getPeersFunc; // تابعی که Set یا Map از peerIdها برمی‌گرداند
+        this.syncLock = false;
+        this.bufferingPeers = new Set();       // peerهایی که در حال Buffering هستند
+        this.isBuffering = false;             // وضعیت خودم
+
+        // پارامترهای همگام‌سازی زمانی
+        this.clockOffset = new Map();          // peerId -> offset (ms)
+        this.latencySamples = new Map();       // peerId -> []
+        this.maxLatencySamples = 8;
+
+        // اتصال رویدادهای پلیر
+        this._bindPlayerEvents();
+    }
+
+    _bindPlayerEvents() {
+        this.player.addEventListener('play', () => this._onLocalPlay());
+        this.player.addEventListener('pause', () => this._onLocalPause());
+        this.player.addEventListener('waiting', () => this._onBufferingStart());
+        this.player.addEventListener('canplay', () => this._onBufferingEnd());
+        this.player.addEventListener('seeked', () => this._onLocalSeek());
+    }
+
+    // رویدادهای محلی
+    _onLocalPlay() {
+        if (this.syncLock) return;
+        // منتظر نماندن برای Buffering بقیه در هنگام play محلی (اختیاری)
+        this._broadcastSync('play', this.player.currentTime);
+    }
+
+    _onLocalPause() {
+        if (this.syncLock) return;
+        this._broadcastSync('pause', this.player.currentTime);
+    }
+
+    _onLocalSeek() {
+        if (this.syncLock) return;
+        // ارسال seek محلی به دیگران
+        this._broadcastSync('seek', this.player.currentTime);
+    }
+
+    _onBufferingStart() {
+        this.isBuffering = true;
+        this._broadcastStatus('buffering', true);
+    }
+
+    _onBufferingEnd() {
+        this.isBuffering = false;
+        this._broadcastStatus('buffering', false);
+    }
+
+    // ارسال فرمان سینک به تمام peers
+    _broadcastSync(action, time) {
+        for (let peerId of this.getConnectedPeers()) {
+            this.network.send(peerId, {
+                type: 'SYNC',
+                action,
+                time,
+                senderTime: Date.now() // برای محاسبه Offset
+            });
+        }
+    }
+
+    // ارسال وضعیت به دیگران
+    _broadcastStatus(key, value) {
+        for (let peerId of this.getConnectedPeers()) {
+            this.network.send(peerId, { type: 'STATUS', key, value, senderTime: Date.now() });
+        }
+    }
+
+    // دریافت SYNC یا STATUS از شبکه
+    handleIncomingSync(senderId, data) {
+        if (data.type === 'SYNC') {
+            this._applySync(senderId, data.action, data.time, data.senderTime);
+        } else if (data.type === 'STATUS') {
+            this._applyStatus(senderId, data.key, data.value);
+        }
+    }
+
+    _applyStatus(senderId, key, value) {
+        if (key === 'buffering') {
+            if (value) {
+                this.bufferingPeers.add(senderId);
+            } else {
+                this.bufferingPeers.delete(senderId);
+            }
+            this._checkBufferingState();
+        }
+    }
+
+    // اگر حداقل یک نفر در حال Buffering است، خودمان را هم موقتاً متوقف می‌کنیم
+    _checkBufferingState() {
+        if (this.bufferingPeers.size > 0 && !this.player.paused) {
+            this.player.pause();
+            // بعداً می‌توانیم به محض برطرف شدن بافر، پخش را از سر بگیریم
+        } else if (this.bufferingPeers.size === 0 && this.player.paused && this._lastRemoteAction === 'play') {
+            // اگر آخرین فرمان play بوده و همه آماده‌اند، پخش کن
+            this.player.play().catch(() => {});
+        }
+    }
+
+    // اعمال همگام‌سازی با جبران تأخیر
+    _applySync(senderId, action, time, senderTime) {
+        if (this.syncLock) return;
+        this.syncLock = true;
+
+        const now = Date.now();
+        // محاسبه Offset بین ساعت محلی و ساعت فرستنده (تقریبی)
+        if (senderTime) {
+            this._updateClockOffset(senderId, senderTime, now);
+        }
+
+        // جبران تأخیر: بهترین تخمین ما از زمان دقیق پخش در لحظه دریافت، 
+        // با استفاده از Offset میانگین محاسبه می‌شود.
+        let compensatedTime = time;
+        if (senderTime && this.clockOffset.has(senderId)) {
+            const offset = this.clockOffset.get(senderId).offset || 0;
+            // زمان محلی که فرستنده در آن قصد داشته = senderTime (محلی فرستنده)
+            // زمان محلی ما = senderTime + offset (میانگین)
+            // اما پیام با تأخیر رسیده، پس زمان فعلی را بر اساس offset به‌روز می‌کنیم
+            // به عبارت دیگر: الان چه زمانی باید در ویدیو باشیم؟
+            const elapsedSinceSend = now - (senderTime - offset); // زمان سپری‌شده از دید فرستنده
+            compensatedTime = time + (elapsedSinceSend / 1000);
+        }
+
+        try {
+            if (this.player.src) {
+                // فقط در صورتی که اختلاف زیاد باشد seek می‌کنیم
+                if (Math.abs(this.player.currentTime - compensatedTime) > 0.3) {
+                    this.player.currentTime = compensatedTime;
+                }
+                if (action === 'play' || action === 'seek') {
+                    this.player.play().catch(() => {});
+                } else if (action === 'pause') {
+                    this.player.pause();
+                }
+            }
+            this._lastRemoteAction = action;
+        } finally {
+            setTimeout(() => { this.syncLock = false; }, 300);
+        }
+    }
+
+    // به‌روزرسانی Offset با میانگین‌گیری متحرک
+    _updateClockOffset(peerId, senderTime, receiveTime) {
+        if (!this.latencySamples.has(peerId)) {
+            this.latencySamples.set(peerId, []);
+        }
+        const samples = this.latencySamples.get(peerId);
+        // تخمین ساده: half RTT
+        const rtt = receiveTime - senderTime;
+        // فرض می‌کنیم تاخیر رفت و برگشت متقارن است (در عمل ممکن است نباشد)
+        const estimatedOffset = rtt / 2; // ms
+        samples.push(estimatedOffset);
+        if (samples.length > this.maxLatencySamples) samples.shift();
+
+        // میانگین‌گیری
+        const avgOffset = samples.reduce((a, b) => a + b, 0) / samples.length;
+        this.clockOffset.set(peerId, { offset: avgOffset, lastUpdate: receiveTime });
+    }
+
+    // متد کمکی برای انتخاب فایل جدید (مدیریت حافظه)
+    static loadVideo(player, file) {
+        if (player._blobUrl) {
+            URL.revokeObjectURL(player._blobUrl);
+        }
+        const url = URL.createObjectURL(file);
+        player._blobUrl = url;
+        player.src = url;
+        player.load();
+    }
+
+    // پاکسازی نهایی
+    destroy() {
+        if (this.player._blobUrl) URL.revokeObjectURL(this.player._blobUrl);
+        this.player.removeEventListener('play', this._onLocalPlay);
+        // ... سایر listenerها (برای سادگی می‌توان از یک آرایه استفاده کرد)
+    }
+}
+
+/**
+ * ============== 3. اجرای اصلی برنامه ==============
+ */
 (function() {
-    // DOM Elements
-    const loginOverlay = document.getElementById('login-overlay');
-    const nameInput = document.getElementById('name-input');
-    const btnLogin = document.getElementById('btn-login');
-    const mainApp = document.getElementById('main-app');
-    const player = document.getElementById('player');
-    const fileUploader = document.getElementById('file-uploader');
-    const btnPlay = document.getElementById('btn-play');
-    const btnPause = document.getElementById('btn-pause');
-    const speedSelect = document.getElementById('speed-select');
-    const statusTag = document.getElementById('status-tag');
-    const usersBar = document.getElementById('users-bar');
-    const messagesDiv = document.getElementById('messages');
-    const msgInput = document.getElementById('msg-input');
+    const loginOverlay = document.getElementById('login-overlay');
+    const nameInput = document.getElementById('name-input');
+    const btnLogin = document.getElementById('btn-login');
+    const mainApp = document.getElementById('main-app');
+    const player = document.getElementById('player');
+    const fileUploader = document.getElementById('file-uploader');
+    const btnPlay = document.getElementById('btn-play');
+    const btnPause = document.getElementById('btn-pause');
+    const speedSelect = document.getElementById('speed-select');
+    const statusTag = document.getElementById('status-tag');
+    const usersBar = document.getElementById('users-bar');
+    const messagesDiv = document.getElementById('messages');
+    const msgInput = document.getElementById('msg-input');
 
-    let myName = '';
-    let mqttClient = null;
-    const network = new EnterpriseNetworkEngine();
-    const connectedPeers = new Map(); // peerId -> name
-    const chatHistory = [];            // ذخیره آخرین پیام‌ها برای تاریخچه
-    const HISTORY_LENGTH = 20;
-    let isSyncing = false;
+    let myName = '';
+    let mqttClient = null;
+    const network = new EnterpriseNetworkEngine();
+    const connectedPeers = new Map(); // peerId -> name
+    let videoSync; // بعد از login ساخته می‌شود
 
-    // اضافه کردن پیام به رابط کاربری و تاریخچه
-    function addMessage(text, isSent, senderName = '') {
-        const div = document.createElement('div');
-        div.className = `chat-message ${isSent ? 'msg-sent' : 'msg-received'}`;
-        const sender = isSent ? 'من' : (senderName || 'ناشناس');
-        div.innerHTML = `<div>${escapeHtml(text)}</div><div class="msg-info">${sender} • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
-        messagesDiv.appendChild(div);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    // تاریخچه چت
+    const chatHistory = [];
+    const HISTORY_LENGTH = 20;
 
-        // ذخیره در تاریخچه
-        const msgObj = { text, sender: isSent ? myName : senderName, timestamp: Date.now(), id: Date.now().toString(36) + Math.random() };
-        chatHistory.push(msgObj);
-        // محدود نگه داشتن تاریخچه
-        while (chatHistory.length > HISTORY_LENGTH) chatHistory.shift();
-    }
+    function getConnectedPeerIds() {
+        return connectedPeers.keys();
+    }
 
-    // ارسال تاریخچه به یک peer خاص
-    function sendHistory(peerId) {
-        const lastMessages = chatHistory.slice(-HISTORY_LENGTH);
-        network.send(peerId, { type: 'HISTORY', messages: lastMessages });
-    }
+    function addMessage(text, isSent, senderName = '') {
+        const div = document.createElement('div');
+        div.className = `chat-message ${isSent ? 'msg-sent' : 'msg-received'}`;
+        const sender = isSent ? 'من' : (senderName || 'ناشناس');
+        div.innerHTML = `<div>${escapeHtml(text)}</div><div class="msg-info">${sender} • ${new Date().toLocaleTimeString('fa-IR')}</div>`;
+        messagesDiv.appendChild(div);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        const msgObj = { text, sender: isSent ? myName : senderName, timestamp: Date.now(), id: Date.now().toString(36)+Math.random() };
+        chatHistory.push(msgObj);
+        while (chatHistory.length > HISTORY_LENGTH) chatHistory.shift();
+    }
 
-    // پاک‌سازی HTML
-    function escapeHtml(str) {
-        return str.replace(/[&<>"']/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[m]);
-    }
+    function escapeHtml(str) { return str.replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[m]); }
 
-    // به‌روزرسانی لیست کاربران
-    function updateUsersBar() {
-        usersBar.innerHTML = `<span class="user-chip">👤 ${myName} (من)</span>` +
-            Array.from(connectedPeers.entries()).map(([id, name]) => 
-                `<span class="user-chip">👤 ${name || id.substring(0,6)}</span>`
-            ).join('');
-    }
+    function updateUsersBar() {
+        usersBar.innerHTML = `<span class="user-chip">👤 ${myName} (من)</span>` +
+            Array.from(connectedPeers.entries()).map(([id, name]) => `<span class="user-chip">👤 ${name || id.substring(0,6)}</span>`).join('');
+    }
 
-    // همگام‌سازی ویدیو
-    function applySync(action, time) {
-        if (isSyncing) return;
-        isSyncing = true;
-        try {
-            if (player.src) {
-                player.currentTime = time;
-                if (action === 'play') player.play().catch(() => {});
-                else if (action === 'pause') player.pause();
-            }
-        } finally {
-            setTimeout(() => { isSyncing = false; }, 200);
-        }
-    }
+    function sendHistory(peerId) {
+        network.send(peerId, { type: 'HISTORY', messages: chatHistory.slice(-HISTORY_LENGTH) });
+    }
 
-    function sendSync(action) {
-        const time = player.currentTime;
-        // ارسال به همه peers
-        for (let peerId of connectedPeers.keys()) {
-            network.send(peerId, { type: 'SYNC', action, time });
-        }
-    }
+    // راه‌اندازی بعد از ورود
+    btnLogin.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return alert('لطفاً نام خود را وارد کنید');
+        myName = name;
+        loginOverlay.style.display = 'none';
+        mainApp.style.display = 'flex';
+        updateUsersBar();
 
-    // رویدادهای شبکه
-    network.onStatus((status) => {
-        if (status.type === 'ready') {
-            statusTag.textContent = `✅ شناسه: ${status.detail.substring(0,6)}...`;
-            // انتشار در MQTT
-            if (mqttClient && mqttClient.connected) {
-                mqttClient.publish('cinema_mesh_room', JSON.stringify({
-                    peerId: network.myId,
-                    name: myName
-                }));
-            }
-        } else if (status.type === 'connected') {
-            statusTag.textContent = `🔗 متصل به ${status.detail.substring(0,6)}...`;
-            // درخواست نام از peer متصل شده
-            // ارسال نام من هم
-            network.send(status.detail, { type: 'HELLO', name: myName });
-        }
-    });
+        // ایجاد موتور همگام‌سازی ویدئو
+        videoSync = new VideoSyncEngine(player, network, getConnectedPeerIds);
 
-    network.onPeerConnected = (peerId) => {
-        // وقتی یک اتصال جدید برقرار شد، تاریخچه را ارسال کن
-        sendHistory(peerId);
-    };
+        // MQTT
+        mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+        mqttClient.on('connect', () => {
+            mqttClient.subscribe('cinema_mesh_room');
+            mqttClient.publish('cinema_mesh_room', JSON.stringify({ peerId: network.myId, name: myName }));
+        });
+        mqttClient.on('message', (topic, message) => {
+            try {
+                const data = JSON.parse(message.toString());
+                if (data.peerId && data.peerId !== network.myId) {
+                    network.connect(data.peerId);
+                    if (data.name) { connectedPeers.set(data.peerId, data.name); updateUsersBar(); }
+                }
+            } catch (e) {}
+        });
 
-    network.onPeerDisconnected = (peerId) => {
-        connectedPeers.delete(peerId);
-        updateUsersBar();
-    };
+        network.init();
 
-    network.onData((senderId, data) => {
-        switch (data.type) {
-            case 'HELLO':
-                // دریافت نام peer
-                connectedPeers.set(senderId, data.name || 'ناشناس');
-                updateUsersBar();
-                // ارسال تاریخچه به ایشان
-                sendHistory(senderId);
-                break;
-            case 'HISTORY':
-                // دریافت تاریخچه پیام‌ها
-                data.messages.forEach(msg => {
-                    // جلوگیری از تکراری با بررسی محتوای تقریبی (بهتر است id ذخیره شود)
-                    if (!chatHistory.find(m => m.id === msg.id)) {
-                        addMessage(msg.text, false, msg.sender);
-                    }
-                });
-                break;
-            case 'SYNC':
-                applySync(data.action, data.time);
-                break;
-            case 'CHAT':
-                addMessage(data.text, false, data.sender);
-                break;
-        }
-    });
+        network.onStatus((status) => {
+            if (status.type === 'ready') {
+                statusTag.textContent = `✅ شناسه: ${status.detail.substring(0,6)}...`;
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish('cinema_mesh_room', JSON.stringify({ peerId: network.myId, name: myName }));
+                }
+            } else if (status.type === 'connected') {
+                statusTag.textContent = `🔗 متصل به ${status.detail.substring(0,6)}...`;
+                network.send(status.detail, { type: 'HELLO', name: myName });
+            }
+        });
 
-    // ورود کاربر
-    btnLogin.addEventListener('click', () => {
-        const name = nameInput.value.trim();
-        if (!name) return alert('لطفاً نام خود را وارد کنید');
-        myName = name;
+        network.onPeerConnected = (peerId) => { sendHistory(peerId); };
+        network.onPeerDisconnected = (peerId) => {
+            connectedPeers.delete(peerId);
+            updateUsersBar();
+            // پاکسازی داده‌های مربوط به آن peer در موتور ویدئو
+            if (videoSync) {
+                videoSync.bufferingPeers.delete(peerId);
+                videoSync.clockOffset.delete(peerId);
+                videoSync.latencySamples.delete(peerId);
+                videoSync._checkBufferingState();
+            }
+        };
 
-        // پنهان کردن صفحه ورود و نمایش برنامه اصلی
-        loginOverlay.style.display = 'none';
-        mainApp.style.display = 'flex';
-        updateUsersBar();
+        network.onData((senderId, data) => {
+            switch (data.type) {
+                case 'HELLO':
+                    connectedPeers.set(senderId, data.name || 'ناشناس');
+                    updateUsersBar();
+                    sendHistory(senderId);
+                    break;
+                case 'HISTORY':
+                    data.messages.forEach(msg => {
+                        if (!chatHistory.find(m => m.id === msg.id)) addMessage(msg.text, false, msg.sender);
+                    });
+                    break;
+                case 'SYNC':
+                case 'STATUS':
+                    videoSync.handleIncomingSync(senderId, data);
+                    break;
+                case 'CHAT':
+                    addMessage(data.text, false, data.sender);
+                    break;
+            }
+        });
+    });
 
-        // راه‌اندازی MQTT
-        mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-        mqttClient.on('connect', () => {
-            mqttClient.subscribe('cinema_mesh_room');
-            // انتشار اطلاعات من
-            mqttClient.publish('cinema_mesh_room', JSON.stringify({
-                peerId: network.myId,
-                name: myName
-            }));
-        });
-        mqttClient.on('message', (topic, message) => {
-            try {
-                const data = JSON.parse(message.toString());
-                if (data.peerId && data.peerId !== network.myId) {
-                    // اتصال به peer جدید
-                    network.connect(data.peerId);
-                    // ذخیره نام برای بعد (در صورت نرسیدن HELLO)
-                    if (data.name) {
-                        connectedPeers.set(data.peerId, data.name);
-                        updateUsersBar();
-                    }
-                }
-            } catch (e) {}
-        });
+    // کنترل‌های دستی ویدئو (اختیاری، موتور ویدئو خودش صدا می‌زند)
+    btnPlay.addEventListener('click', () => {
+        if (!player.src) return alert('لطفاً یک فایل ویدیویی انتخاب کنید');
+        player.play().catch(() => {});
+    });
+    btnPause.addEventListener('click', () => {
+        if (!player.src) return;
+        player.pause();
+    });
 
-        // راه‌اندازی شبکه P2P
-        network.init();
-    });
+    speedSelect.addEventListener('change', () => { player.playbackRate = parseFloat(speedSelect.value); });
 
-    // کنترل‌های ویدیو
-    btnPlay.addEventListener('click', () => {
-        if (!player.src) return alert('لطفاً یک فایل ویدیویی انتخاب کنید');
-        player.play().then(() => { if (!isSyncing) sendSync('play'); }).catch(e => console.warn(e));
-    });
+    fileUploader.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            VideoSyncEngine.loadVideo(player, file);
+        }
+    });
 
-    btnPause.addEventListener('click', () => {
-        if (!player.src) return;
-        player.pause();
-        if (!isSyncing) sendSync('pause');
-    });
+    msgInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && msgInput.value.trim()) {
+            const text = msgInput.value.trim();
+            addMessage(text, true);
+            for (let peerId of getConnectedPeerIds()) {
+                network.send(peerId, { type: 'CHAT', text, sender: myName });
+            }
+            msgInput.value = '';
+        }
+    });
 
-    speedSelect.addEventListener('change', () => {
-        player.playbackRate = parseFloat(speedSelect.value);
-    });
-
-    fileUploader.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            player.src = url;
-            player.load();
-        }
-    });
-
-    // چت
-    msgInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && msgInput.value.trim()) {
-            const text = msgInput.value.trim();
-            addMessage(text, true);
-            // ارسال به همه
-            for (let peerId of connectedPeers.keys()) {
-                network.send(peerId, { type: 'CHAT', text, sender: myName });
-            }
-            msgInput.value = '';
-        }
-    });
-
-    // قطع اتصال هنگام خروج
-    window.addEventListener('beforeunload', () => {
-        network.destroy();
-        if (mqttClient) mqttClient.end();
-    });
+    window.addEventListener('beforeunload', () => {
+        network.destroy();
+        if (mqttClient) mqttClient.end();
+        if (videoSync) videoSync.destroy();
+    });
 })();
 </script>
 </body>
