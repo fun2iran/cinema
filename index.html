@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | نسخه نهایی با ریپلای حرفه‌ای</title>
+    <title>CinemaCore Pro | نسخه بهینه و پایدار</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -84,7 +84,6 @@
             width: 100%;
             overflow: hidden;
         }
-        /* بخش بالایی ثابت */
         .fixed-top {
             flex-shrink: 0;
         }
@@ -222,7 +221,6 @@
             align-items: center;
             gap: 3px;
         }
-        /* بخش چت (اسکرول‌شونده) */
         .chat-area {
             flex: 1;
             display: flex;
@@ -258,7 +256,6 @@
             background-color: #2a3942;
             border-bottom-right-radius: 6px;
         }
-        /* استایل ریپلای داخل پیام */
         .reply-preview {
             font-size: 11px;
             background: rgba(0, 0, 0, 0.25);
@@ -293,7 +290,6 @@
         .reply-badge:active {
             background: rgba(255, 255, 255, 0.3);
         }
-        /* نوار ورودی پیام با نمایش ریپلای */
         .input-area {
             padding: 6px 8px;
             background: var(--panel);
@@ -383,7 +379,7 @@
 
 <div id="login-overlay">
     <h2>🎬 CinemaCore Pro</h2>
-    <input type="text" id="name-input" placeholder="نام شما" autocomplete="off">
+    <input type="text" id="name-input" placeholder="نام شما" autocomplete="off" maxlength="20">
     <button id="btn-login">ورود به گروه</button>
 </div>
 
@@ -430,9 +426,11 @@
 
 <script>
 (function(){
-    // ---------- تنظیمات اولیه ----------
+    // ---------- ثابت‌ها و تنظیمات ----------
     const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
     const MAX_PEERS = 8;
+    const HISTORY_SIZE = 50;           // تعداد پیام‌هایی که هنگام اتصال همتای جدید ارسال می‌شود
+    const PROGRESS_INTERVAL_MS = 100;  // به‌روزرسانی نوار پیشرفت هر ۱۰۰ میلی‌ثانیه
 
     // ---------- عناصر DOM ----------
     const loginOverlay = document.getElementById('login-overlay');
@@ -462,10 +460,12 @@
     let myPeerId = null;
     let mqttClient = null;
     let peer = null;
-    let connectedPeers = new Map(); // peerId -> { conn, name, outSeq }
+    let connectedPeers = new Map(); // peerId -> { conn, name }
+    let myGlobalSeq = 0;            // شمارهٔ سراسری پیام‌های خودمان (برای چت)
+    let messageHistory = [];        // ذخیرهٔ آخرین پیام‌ها (برای ارسال به همتایان جدید)
     let videoSync = null;
     let isSeeking = false;
-    let rafId = null;
+    let progressInterval = null;
     let currentReply = null; // { peerId, seq, text }
 
     // ---------- توابع کمکی ----------
@@ -512,8 +512,8 @@
         usersBar.innerHTML = html;
     }
 
-    // نمایش پیام جدید در چت (با قابلیت ریپلای)
-    function displayMessage(peerId, seq, text, senderName, isSelf, replyToSeq = null, replyText = null) {
+    // نمایش یک پیام در چت (با حذف موارد تکراری بر اساس msgKey)
+    function displayMessage(peerId, seq, text, senderName, isSelf, replyToSeq = null, replyText = null, timestamp = null) {
         const msgKey = `${peerId}:${seq}`;
         if (document.querySelector(`.chat-message[data-msg-key="${msgKey}"]`)) return;
 
@@ -525,7 +525,6 @@
         div.setAttribute('data-msg-key', msgKey);
 
         let content = '';
-        // نمایش ریپلای داخل پیام
         if (replyToSeq && replyText) {
             content += `<div class="reply-preview">
                             <span>↪️ پاسخ به ${escapeHtml(senderName)}: </span>
@@ -533,30 +532,29 @@
                         </div>`;
         }
         content += `<div>${escapeHtml(text)}</div>`;
+        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString('fa-IR') : new Date().toLocaleTimeString('fa-IR');
         content += `<div class="msg-info">
                         <span>#${seq}</span>
-                        <span>${escapeHtml(senderName)} • ${new Date().toLocaleTimeString('fa-IR')}</span>
+                        <span>${escapeHtml(senderName)} • ${timeStr}</span>
                         <span class="reply-badge" data-peer="${peerId}" data-seq="${seq}" data-text="${escapeHtml(text)}">↩️ پاسخ</span>
                     </div>`;
         div.innerHTML = content;
 
-        // رویداد کلیک روی دکمه ریپلای
+        // رویداد کلیک روی دکمهٔ پاسخ
         const replyBtn = div.querySelector('.reply-badge');
         replyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // ذخیره اطلاعات پیام برای ریپلای
             currentReply = {
                 peerId: replyBtn.dataset.peer,
                 seq: parseInt(replyBtn.dataset.seq),
                 text: replyBtn.dataset.text
             };
-            // نمایش بخش ریپلای در بالای ورودی
             replyPreviewText.textContent = `پاسخ به "${currentReply.text.substring(0, 50)}..."`;
             replyPreviewDiv.style.display = 'flex';
             msgInput.focus();
         });
 
-        // درج بر اساس شماره پیام
+        // درج به ترتیب شمارهٔ پیام (seq)
         let inserted = false;
         const children = messagesDiv.children;
         for (let i = 0; i < children.length; i++) {
@@ -573,9 +571,13 @@
         }
         if (!inserted) messagesDiv.appendChild(div);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        // افزودن به تاریخچهٔ محلی (برای همگام‌سازی بعدی)
+        messageHistory.push({ peerId, seq, text, sender: senderName, isSelf, replyToSeq, replyText, timestamp: timestamp || Date.now() });
+        if (messageHistory.length > HISTORY_SIZE) messageHistory.shift();
     }
 
-    // ---------- کلاس شبکه با قابلیت اطمینان ----------
+    // کلاس مدیریت شبکه (رفع مشکل اتصال مجدد و پشتیبانی از تاریخچه)
     class ReliableNetwork {
         constructor() {
             this.callbacks = { onData: null, onStatus: null };
@@ -589,15 +591,19 @@
                 { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
             ];
             peer = new Peer(null, { debug: 0, config: { iceServers } });
+
             peer.on('open', (id) => {
                 myPeerId = id;
                 this._emitStatus('ready', id);
             });
+
             peer.on('connection', (conn) => this._handleConnection(conn));
+
             peer.on('disconnected', () => {
                 this._emitStatus('disconnected');
                 peer.reconnect();
             });
+
             peer.on('error', (err) => {
                 console.error('Peer error:', err);
                 this._emitStatus('error', err.message);
@@ -605,52 +611,75 @@
         }
 
         _handleConnection(conn) {
-            if (connectedPeers.has(conn.peer)) return;
+            const remoteId = conn.peer;
+            // اگر از قبل اتصالی با این peer داریم، اتصال قدیمی را ببندیم
+            if (connectedPeers.has(remoteId)) {
+                const old = connectedPeers.get(remoteId);
+                try { old.conn.close(); } catch(e) {}
+                connectedPeers.delete(remoteId);
+            }
+
+            let peerInfo = {
+                conn: conn,
+                name: 'در حال دریافت...'
+            };
+            connectedPeers.set(remoteId, peerInfo);
+
             conn.on('open', () => {
-                const peerId = conn.peer;
-                connectedPeers.set(peerId, {
-                    conn: conn,
-                    name: 'در حال دریافت...',
-                    outSeq: 1
-                });
-                // ارسال اطلاعات خود به طرف مقابل
+                // ارسال اطلاعات خودمان
                 conn.send({
                     type: 'HELLO',
                     name: myName,
                     peerId: myPeerId
                 });
+                // ارسال تاریخچهٔ پیام‌های اخیر (برای همگام‌سازی)
+                conn.send({
+                    type: 'HISTORY',
+                    messages: messageHistory
+                });
                 updateUsersBar();
                 if (this.callbacks.onData) {
-                    this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
+                    this.callbacks.onData('system', { type: 'JOIN', peerId: remoteId, name: null });
                 }
             });
-            conn.on('data', (data) => this._processIncoming(conn.peer, data));
+
+            conn.on('data', (data) => this._processIncoming(remoteId, data));
+
             conn.on('close', () => {
-                const peerInfo = connectedPeers.get(conn.peer);
-                if (peerInfo) {
+                const info = connectedPeers.get(remoteId);
+                if (info) {
                     if (this.callbacks.onData) {
-                        this.callbacks.onData('system', { type: 'LEAVE', peerId: conn.peer, name: peerInfo.name });
+                        this.callbacks.onData('system', { type: 'LEAVE', peerId: remoteId, name: info.name });
                     }
-                    connectedPeers.delete(conn.peer);
+                    connectedPeers.delete(remoteId);
                     updateUsersBar();
                 }
             });
+
             conn.on('error', (err) => console.warn('Connection error:', err));
         }
 
         _processIncoming(senderId, data) {
+            // پیام‌های سیستمی و کنترلی
             if (data.type === 'HELLO') {
-                const peerInfo = connectedPeers.get(senderId);
-                if (peerInfo) {
-                    peerInfo.name = sanitizeName(data.name);
+                const info = connectedPeers.get(senderId);
+                if (info) {
+                    info.name = sanitizeName(data.name);
                     updateUsersBar();
                 }
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
+            else if (data.type === 'HISTORY') {
+                // دریافت تاریخچه از یک همتای جدید
+                if (Array.isArray(data.messages)) {
+                    for (let msg of data.messages) {
+                        displayMessage(msg.peerId, msg.seq, msg.text, msg.sender, msg.isSelf, msg.replyToSeq, msg.replyText, msg.timestamp);
+                    }
+                }
+            }
             else if (data.type === 'CHAT') {
-                // نمایش فوری پیام دریافتی
                 const isSelf = (data.senderId === myPeerId);
-                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, data.replyText);
+                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, data.replyText, data.timestamp);
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
             else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY') {
@@ -662,8 +691,9 @@
             for (let [peerId, info] of connectedPeers.entries()) {
                 const conn = info.conn;
                 if (!conn || !conn.open) continue;
+
                 if (type === 'CHAT') {
-                    const seq = info.outSeq++;
+                    const seq = ++myGlobalSeq;
                     const message = {
                         type: 'CHAT',
                         seq: seq,
@@ -676,7 +706,7 @@
                     };
                     conn.send(message);
                     // نمایش پیام خودمان
-                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, payload.replyText);
+                    displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, payload.replyText, message.timestamp);
                 } else {
                     conn.send({ type, ...payload });
                 }
@@ -689,8 +719,7 @@
                 this._emitStatus('error', 'حداکثر تعداد همتایان پر شده است');
                 return;
             }
-            const newConn = peer.connect(remoteId, { reliable: true });
-            // رویدادهای اتصال در this._handleConnection مدیریت می‌شوند
+            peer.connect(remoteId, { reliable: true });
         }
 
         onData(cb) { this.callbacks.onData = cb; }
@@ -699,7 +728,7 @@
         destroy() { if (peer) peer.destroy(); }
     }
 
-    // ---------- موتور همگام‌سازی ویدئو ----------
+    // ---------- موتور همگام‌سازی ویدئو (بهبود یافته) ----------
     class VideoSyncEngine {
         constructor(player, network) {
             this.player = player;
@@ -707,10 +736,11 @@
             this.syncLock = false;
             this.bufferingPeers = new Set();
             this.lastSyncTime = 0;
-            this.SYNC_THROTTLE = 200;
+            this.SYNC_THROTTLE = 250; // میلی‌ثانیه (افزایش برای کاهش ترافیک)
             this._lastRemoteAction = 'pause';
             this._bindEvents();
         }
+
         _bindEvents() {
             this.player.addEventListener('play', () => this._onLocalPlay());
             this.player.addEventListener('pause', () => this._onLocalPause());
@@ -719,6 +749,7 @@
             this.player.addEventListener('seeked', () => this._onLocalSeekThrottled());
             this.player.addEventListener('ratechange', () => this._onLocalRateChange());
         }
+
         _onLocalPlay() { if (!this.syncLock) this._broadcast('play', this.player.currentTime); }
         _onLocalPause() { if (!this.syncLock) this._broadcast('pause', this.player.currentTime); }
         _onLocalSeekThrottled() {
@@ -731,6 +762,7 @@
         _onLocalRateChange() { if (!this.syncLock) this._broadcastSpeed(this.player.playbackRate); }
         _onBufferingStart() { this._broadcastStatus('buffering', true); }
         _onBufferingEnd() { this._broadcastStatus('buffering', false); }
+
         _broadcast(action, time) {
             for (let [peerId, info] of connectedPeers.entries()) {
                 if (info.conn && info.conn.open) {
@@ -738,25 +770,30 @@
                 }
             }
         }
+
         _broadcastSpeed(rate) {
             for (let [peerId, info] of connectedPeers.entries()) {
                 if (info.conn && info.conn.open) info.conn.send({ type: 'SPEED', rate });
             }
         }
+
         _broadcastStatus(key, value) {
             for (let [peerId, info] of connectedPeers.entries()) {
                 if (info.conn && info.conn.open) info.conn.send({ type: 'STATUS', key, value });
             }
         }
+
         setPlaybackRate(rate) {
             if (this.player.playbackRate !== rate) this.player.playbackRate = rate;
             this._broadcastSpeed(rate);
         }
+
         handleIncoming(senderId, data) {
             if (data.type === 'SYNC') this._applySync(data.action, data.time, data.senderTime);
             else if (data.type === 'SPEED') this.player.playbackRate = data.rate;
             else if (data.type === 'STATUS') this._applyStatus(senderId, data.key, data.value);
         }
+
         _applyStatus(senderId, key, value) {
             if (key === 'buffering') {
                 if (value) this.bufferingPeers.add(senderId);
@@ -764,6 +801,7 @@
                 this._checkBuffering();
             }
         }
+
         _checkBuffering() {
             if (this.bufferingPeers.size > 0 && !this.player.paused) {
                 this.player.pause();
@@ -771,6 +809,7 @@
                 this.player.play().catch(()=>{});
             }
         }
+
         _applySync(action, time, senderTime) {
             if (this.syncLock) return;
             this.syncLock = true;
@@ -780,20 +819,22 @@
                 const elapsed = (now - senderTime) / 1000;
                 compensated = time + elapsed;
             }
-            try {
-                if (this.player.src && Math.abs(this.player.currentTime - compensated) > 0.5) {
-                    this.player.currentTime = compensated;
-                }
-                if (action === 'play' || action === 'seek') {
-                    this.player.play().catch(()=>{});
-                } else if (action === 'pause') {
-                    this.player.pause();
-                }
-                this._lastRemoteAction = action;
-            } finally {
-                setTimeout(()=>{ this.syncLock = false; }, 300);
+
+            const currentDiff = Math.abs(this.player.currentTime - compensated);
+            // فقط در صورت اختلاف بیش از ۰٫۳ ثانیه همگام‌سازی کن
+            if (currentDiff > 0.3 && !isNaN(compensated)) {
+                this.player.currentTime = compensated;
             }
+
+            if (action === 'play' || action === 'seek') {
+                this.player.play().catch(()=>{});
+            } else if (action === 'pause') {
+                this.player.pause();
+            }
+            this._lastRemoteAction = action;
+            setTimeout(() => { this.syncLock = false; }, 300);
         }
+
         destroy() {}
     }
 
@@ -808,7 +849,6 @@
         if (currentReply) {
             replyToSeq = currentReply.seq;
             replyText = currentReply.text;
-            // ریست کردن وضعیت ریپلای
             currentReply = null;
             replyPreviewDiv.style.display = 'none';
         }
@@ -816,13 +856,12 @@
         msgInput.value = '';
     }
 
-    // لغو ریپلای
     function cancelReply() {
         currentReply = null;
         replyPreviewDiv.style.display = 'none';
     }
 
-    // رویداد ورود کاربر
+    // ورود کاربر
     btnLogin.addEventListener('click', () => {
         let rawName = nameInput.value.trim();
         if (!rawName) return alert('لطفاً نام خود را وارد کنید');
@@ -835,11 +874,11 @@
         network.onStatus((status) => {
             if (status.type === 'ready') {
                 statusTag.textContent = `🆔 ${status.detail.substring(0,6)}`;
-                // اتصال به MQTT
-                mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+                // اتصال به کارگزار MQTT برای کشف همتاها
+                mqttClient = mqtt.connect('wss://test.mosquitto.org:8081/mqtt');
                 mqttClient.on('connect', () => {
-                    mqttClient.subscribe('cinema_mesh_room_pro');
-                    mqttClient.publish('cinema_mesh_room_pro', JSON.stringify({ peerId: myPeerId, name: myName }));
+                    mqttClient.subscribe('cinema_mesh_room_pro_v2');
+                    mqttClient.publish('cinema_mesh_room_pro_v2', JSON.stringify({ peerId: myPeerId, name: myName }));
                 });
                 mqttClient.on('message', (topic, message) => {
                     try {
@@ -855,7 +894,6 @@
                 player.load();
             } else if (status.type === 'error') {
                 statusTag.textContent = `⚠️ خطا: ${status.detail}`;
-                console.error(status.detail);
             }
         });
 
@@ -890,10 +928,11 @@
         videoSync = new VideoSyncEngine(player, network);
     });
 
-    // رویدادهای UI
+    // ---------- رویدادهای UI ----------
     sendBtn.addEventListener('click', sendChatMessage);
     msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
     cancelReplyBtn.addEventListener('click', cancelReply);
+
     btnPlay.addEventListener('click', () => { if(player.src) player.play().catch(e=>alert('خطا در پخش')); });
     btnPause.addEventListener('click', () => { if(player.src) player.pause(); });
     speedSelect.addEventListener('change', () => { if(videoSync) videoSync.setPlaybackRate(parseFloat(speedSelect.value)); });
@@ -906,27 +945,25 @@
     });
     seekBar.addEventListener('change', () => { isSeeking = false; });
 
+    // به‌روزرسانی نوار پیشرفت با بازهٔ زمانی ثابت (بهینه‌تر از rAF)
     function updateProgress() {
-        if (!isSeeking && player.duration) {
+        if (!isSeeking && player.duration && !isNaN(player.duration)) {
             seekBar.value = (player.currentTime / player.duration) * 100;
             currentTimeSpan.textContent = formatTime(player.currentTime);
-        }
-        if (player.duration && !isNaN(player.duration)) {
             durationSpan.textContent = formatTime(player.duration);
-            seekBar.max = 100;
         }
-        rafId = requestAnimationFrame(updateProgress);
     }
     player.addEventListener('loadedmetadata', () => {
         durationSpan.textContent = formatTime(player.duration);
         seekBar.max = 100;
     });
-    rafId = requestAnimationFrame(updateProgress);
+    progressInterval = setInterval(updateProgress, PROGRESS_INTERVAL_MS);
 
     fullscreenBtn.addEventListener('click', () => {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
         else document.exitFullscreen();
     });
+
     fileUploader.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -940,7 +977,7 @@
     });
 
     window.addEventListener('beforeunload', () => {
-        if (rafId) cancelAnimationFrame(rafId);
+        if (progressInterval) clearInterval(progressInterval);
         if (network) network.destroy();
         if (mqttClient) mqttClient.end();
     });
