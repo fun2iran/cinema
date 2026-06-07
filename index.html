@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CinemaCore Pro | نسخه پایدار با پیام‌های دیگران</title>
+    <title>CinemaCore Pro | نسخه نهایی با پیام‌رسانی کامل</title>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
@@ -314,8 +314,8 @@
 (function(){
     const DEFAULT_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
     const MAX_PEERS = 8;
-    const CACHE_SIZE = 100;
 
+    // DOM elements
     const loginOverlay = document.getElementById('login-overlay');
     const nameInput = document.getElementById('name-input');
     const btnLogin = document.getElementById('btn-login');
@@ -338,12 +338,13 @@
     let myName = '';
     let myPeerId = null;
     let mqttClient = null;
-    let connectedPeers = new Map(); // peerId -> { conn, name, outSeq, expectedSeq, pendingBuffer }
+    let connectedPeers = new Map(); // peerId -> { conn, name, outSeq }
     let videoSync = null;
     let isSeeking = false;
     let rafId = null;
     let pendingReply = null;
 
+    // ====================== توابع کمکی ======================
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -420,6 +421,7 @@
             msgInput.focus();
         });
 
+        // درج به ترتیب شماره پیام
         let inserted = false;
         const children = messagesDiv.children;
         for (let i = 0; i < children.length; i++) {
@@ -438,12 +440,11 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
-    // شبکه قابل اعتماد با رفع مشکل نمایش پیام دیگران
-    class ReliablePeerNetwork {
+    // ====================== شبکه ساده و قابل اعتماد ======================
+    class SimplePeerNetwork {
         constructor() {
             this.peer = null;
             this.callbacks = { onData: null, onStatus: null };
-            this.sentCache = new Map(); // peerId -> [{seq, message}]
         }
 
         init() {
@@ -464,14 +465,12 @@
             if (connectedPeers.has(conn.peer)) return;
             conn.on('open', () => {
                 const peerId = conn.peer;
-                const peerData = {
+                connectedPeers.set(peerId, {
                     conn: conn,
                     name: 'در حال دریافت...',
-                    outSeq: 1,
-                    expectedSeq: 1,
-                    pendingBuffer: new Map()
-                };
-                connectedPeers.set(peerId, peerData);
+                    outSeq: 1
+                });
+                // ارسال HELLO
                 conn.send({ type: 'HELLO', name: myName, peerId: myPeerId });
                 updateUsersBar();
                 if (this.callbacks.onData) this.callbacks.onData('system', { type: 'JOIN', peerId, name: null });
@@ -482,7 +481,6 @@
                 if (peerInfo) {
                     if (this.callbacks.onData) this.callbacks.onData('system', { type: 'LEAVE', peerId: conn.peer, name: peerInfo.name });
                     connectedPeers.delete(conn.peer);
-                    this.sentCache.delete(conn.peer);
                     updateUsersBar();
                 }
             });
@@ -499,86 +497,23 @@
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
             else if (data.type === 'CHAT') {
-                this._handleChat(senderId, data);
-            }
-            else if (data.type === 'REQ') {
-                this._handleReq(senderId, data);
+                // تحویل فوری پیام
+                const isSelf = (data.senderId === myPeerId);
+                let replyText = null;
+                if (data.replyToSeq) {
+                    const originalKey = `${data.senderId}:${data.replyToSeq}`;
+                    const originalDiv = document.querySelector(`.chat-message[data-msg-key="${originalKey}"]`);
+                    if (originalDiv) {
+                        const textDiv = originalDiv.querySelector('div:not(.msg-info):not(.reply-indicator)');
+                        if (textDiv) replyText = textDiv.innerText;
+                    }
+                    if (!replyText) replyText = `پیام #${data.replyToSeq}`;
+                }
+                displayMessage(data.senderId, data.seq, data.text, data.sender, isSelf, data.replyToSeq, replyText);
+                if (this.callbacks.onData) this.callbacks.onData(senderId, data);
             }
             else if (data.type === 'SYNC' || data.type === 'STATUS' || data.type === 'SPEED' || data.type === 'NOTIFY') {
                 if (this.callbacks.onData) this.callbacks.onData(senderId, data);
-            }
-        }
-
-        _handleChat(senderId, msg) {
-            const peerInfo = connectedPeers.get(senderId);
-            if (!peerInfo) {
-                // اگر هنوز اطلاعات همتا ثبت نشده (خیلی کم پیش می‌آید) آن را ایجاد می‌کنیم
-                const tempConn = this.peer.connections.get(senderId)?.[0];
-                if (tempConn) {
-                    this._handleConnection(tempConn);
-                    setTimeout(() => this._handleChat(senderId, msg), 100);
-                }
-                return;
-            }
-            const expected = peerInfo.expectedSeq;
-            const receivedSeq = msg.seq;
-
-            // تحویل فوری پیام (برای جلوگیری از گیر کردن)
-            this._deliverMessage(senderId, msg);
-
-            // مدیریت شماره ترتیبی و بافر (برای درخواست مجدد در صورت لزوم)
-            if (receivedSeq === expected) {
-                peerInfo.expectedSeq++;
-                this._flushPendingBuffer(peerInfo, senderId);
-            } else if (receivedSeq > expected) {
-                peerInfo.pendingBuffer.set(receivedSeq, msg);
-                // درخواست مجدد پیام‌های گم شده (اختیاری)
-                if (peerInfo.reqTimer) clearTimeout(peerInfo.reqTimer);
-                peerInfo.reqTimer = setTimeout(() => {
-                    if (peerInfo.conn && peerInfo.conn.open) {
-                        peerInfo.conn.send({ type: 'REQ', fromSeq: expected, toSeq: receivedSeq - 1 });
-                    }
-                }, 500);
-            }
-        }
-
-        _flushPendingBuffer(peerInfo, senderId) {
-            let next = peerInfo.expectedSeq;
-            while (peerInfo.pendingBuffer.has(next)) {
-                const msg = peerInfo.pendingBuffer.get(next);
-                this._deliverMessage(senderId, msg);
-                peerInfo.pendingBuffer.delete(next);
-                next++;
-                peerInfo.expectedSeq++;
-            }
-        }
-
-        _deliverMessage(senderId, msg) {
-            const isSelf = (msg.senderId === myPeerId);
-            let replyText = null;
-            if (msg.replyToSeq) {
-                const originalKey = `${msg.senderId}:${msg.replyToSeq}`;
-                const originalDiv = document.querySelector(`.chat-message[data-msg-key="${originalKey}"]`);
-                if (originalDiv) {
-                    const textDiv = originalDiv.querySelector('div:not(.msg-info):not(.reply-indicator)');
-                    if (textDiv) replyText = textDiv.innerText;
-                }
-                if (!replyText) replyText = `پیام #${msg.replyToSeq}`;
-            }
-            displayMessage(msg.senderId, msg.seq, msg.text, msg.sender, isSelf, msg.replyToSeq, replyText);
-        }
-
-        _handleReq(peerId, req) {
-            const cache = this.sentCache.get(peerId);
-            if (!cache) return;
-            const from = req.fromSeq;
-            const to = req.toSeq;
-            const conn = connectedPeers.get(peerId)?.conn;
-            if (!conn || !conn.open) return;
-            for (let item of cache) {
-                if (item.seq >= from && item.seq <= to) {
-                    conn.send(item.message);
-                }
             }
         }
 
@@ -598,10 +533,6 @@
                         timestamp: Date.now()
                     };
                     conn.send(message);
-                    if (!this.sentCache.has(peerId)) this.sentCache.set(peerId, []);
-                    const cache = this.sentCache.get(peerId);
-                    cache.push({ seq, message });
-                    while (cache.length > CACHE_SIZE) cache.shift();
                     // نمایش پیام خودمان
                     displayMessage(myPeerId, seq, payload.text, myName, true, payload.replyToSeq, null);
                 } else {
@@ -625,6 +556,7 @@
         destroy() { if (this.peer) this.peer.destroy(); }
     }
 
+    // ====================== موتور همگام‌سازی ویدئو ======================
     class VideoSyncEngine {
         constructor(player, network) {
             this.player = player;
@@ -722,7 +654,8 @@
         destroy() {}
     }
 
-    const network = new ReliablePeerNetwork();
+    // ====================== راه‌اندازی اصلی ======================
+    const network = new SimplePeerNetwork();
 
     function sendChatMessage() {
         let text = msgInput.value.trim();
